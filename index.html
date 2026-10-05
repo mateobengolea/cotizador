@@ -44,29 +44,30 @@
 
   /* ---------- Header ---------- */
   .topbar{
-    background:var(--ink);
-    color:#EAF1EE;
+    background:var(--paper-raised);
+    color:var(--ink);
     padding:22px 20px 0;
     position:sticky;
     top:env(safe-area-inset-top, 0px);
     z-index:40;
-    box-shadow:0 4px 18px rgba(0,0,0,0.18);
+    border-bottom:1px solid var(--line);
+    box-shadow:0 4px 18px rgba(18,41,58,0.06);
   }
   .topbar-inner{max-width:1600px;margin:0 auto;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;}
   .brand{display:flex;align-items:center;gap:12px;}
   .logo-img{display:block;object-fit:contain;}
   .logo-img-topbar{height:58px;width:auto;}
-  .brand-text h1{font-size:22px;color:#fff;}
-  .brand-text p{margin:2px 0 0;font-size:12.5px;color:#9FB6BF;letter-spacing:0.03em;text-transform:uppercase;}
+  .brand-text h1{font-size:22px;color:var(--ink);}
+  .brand-text p{margin:2px 0 0;font-size:12.5px;color:var(--ink-soft);letter-spacing:0.03em;text-transform:uppercase;}
 
   .tabs{display:flex;gap:2px;margin-top:22px;}
   .tab{
-    padding:11px 18px;border:none;background:transparent;color:#9FB6BF;
+    padding:11px 18px;border:none;background:transparent;color:var(--ink-soft);
     font-family:'IBM Plex Sans',sans-serif;font-weight:600;font-size:14px;
     cursor:pointer;border-radius:8px 8px 0 0;position:relative;top:1px;
     transition:color .15s ease, background .15s ease;
   }
-  .tab:hover{color:#EAF1EE;}
+  .tab:hover{color:var(--ink);}
   .tab.active{background:var(--paper);color:var(--ink);}
 
   /* ---------- Panels ---------- */
@@ -312,13 +313,13 @@
 
   .role-badge{
     font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;
-    background:rgba(255,255,255,0.12);color:#EAF1EE;text-transform:uppercase;letter-spacing:0.04em;
+    background:var(--paper);color:var(--ink);text-transform:uppercase;letter-spacing:0.04em;
   }
   .logout-btn{
-    background:none;border:1px solid rgba(255,255,255,0.25);color:#EAF1EE;
+    background:none;border:1px solid var(--line);color:var(--ink);
     border-radius:7px;padding:5px 11px;font-size:12px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;
   }
-  .logout-btn:hover{background:rgba(255,255,255,0.1);}
+  .logout-btn:hover{background:var(--paper);}
   .user-box{display:flex;align-items:center;gap:10px;}
   .admin-only-block{display:none;}
   .admin-only-inline{display:none;}
@@ -362,7 +363,7 @@
       <img id="logoTopbar" class="logo-img logo-img-topbar" alt="Cotizador Squad">
       <div class="brand-text">
         <p>Cotizador Ventas</p>
-        <p style="margin-top:2px;font-size:9.5px;color:rgba(159,182,191,0.55);letter-spacing:0.03em;text-transform:none;">Por: Mateo Bengolea</p>
+        <p style="margin-top:2px;font-size:9.5px;color:rgba(60,85,102,0.65);letter-spacing:0.03em;text-transform:none;">Por: Mateo Bengolea</p>
       </div>
     </div>
     <div class="user-box">
