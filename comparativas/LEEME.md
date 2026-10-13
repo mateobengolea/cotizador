@@ -55,6 +55,20 @@ En el repo `mateobengolea/cotizador` creá una carpeta `comparativas/` y subí t
 
 > Si `config.js` queda vacío, la página arranca en **modo demo**: los datos se guardan solo en ese navegador. Sirve para probar sin tocar la base.
 
+## Importar un pedido de cotización (PDF de Bionexo)
+
+En **Planilla** o **Cotizaciones**, tocá **Importar pedido (PDF)**. También podés arrastrar el PDF sobre la planilla.
+
+1. Se leen solos el expediente (por ejemplo, E247546 → EXPTE 247546), la apertura, la condición de pago, el mantenimiento de oferta y todos los renglones con código del cliente (MED…), cantidad, unidad y marcas.
+2. Para cada renglón la web propone el producto, en este orden:
+   - **ya cotizado**: el mismo código MED o la misma descripción que ya cotizaste antes. Es la sugerencia más segura.
+   - **historial**: un producto de la misma droga y concentración que ya cotizaste.
+   - **costos**: un producto de la lista de costos.
+3. Revisás, cambiás lo que haga falta con el desplegable y destildás lo que no vas a cotizar.
+4. **Crear cotización** arma la hoja con el costo de hoy y el último margen usado para cada producto, o el margen objetivo.
+
+Lo que elegís queda aprendido: el pedido del mes siguiente reconoce los mismos códigos MED y propone los mismos productos.
+
 ## La Planilla (vista tipo Excel)
 
 Es la pantalla principal. Tiene las mismas columnas que la hoja del Excel (R, CANT. ENV, LISTA, CODIGO… Costo META, R [%], Pcio. VENTA, Precio Total, Proceso, Apertura, OC) y pestañas abajo por mes, más *Todas*, *Adjudicados* y una por cada OC.

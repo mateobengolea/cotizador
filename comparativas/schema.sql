@@ -58,6 +58,10 @@ create index if not exists cc_items_cot_idx    on cc_items(cotizacion_id);
 create index if not exists cc_items_codigo_idx on cc_items(codigo);
 create index if not exists cc_items_mono_idx   on cc_items(monodroga);
 
+alter table cc_items add column if not exists cod_cliente  text;   -- código del cliente en el pedido (ej. MED1092)
+alter table cc_items add column if not exists desc_cliente text;   -- descripción del renglón en el pedido
+create index if not exists cc_items_codcli_idx on cc_items(cod_cliente);
+
 -- ---------- Costos vigentes (se reemplazan con cada carga) ----------
 create table if not exists cc_costos (
   codigo      text not null,

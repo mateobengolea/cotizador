@@ -218,7 +218,7 @@ function vCots() {
     <input class="in" id="q" placeholder="Buscar expediente, producto, monodroga…" value="${esc(fCots.q)}" style="width:280px">
     <select class="in" id="mes"><option value="">Todos los meses</option>${meses.map(m => `<option value="${m}" ${m === fCots.mes ? 'selected' : ''}>${MES[+m.slice(5)]} ${m.slice(0, 4)}</option>`).join('')}</select>
     <select class="in" id="est"><option value="">Todos los estados</option>${ESTADOS.map(e => `<option ${e === fCots.estado ? 'selected' : ''}>${e}</option>`).join('')}</select>
-    <button class="btn pri" id="nueva">+ Nueva cotización</button></div>
+    <button class="btn pri" id="ped">Importar pedido (PDF)</button><button class="btn" id="nueva">+ Nueva cotización</button></div>
     <div class="tw"><table class="t"><thead><tr><th>Proceso</th><th>Apertura</th><th class="n">Renglones</th><th class="n">Total cotizado</th><th class="n">Margen</th><th>Estado</th><th>OC</th><th>Comparativa</th><th class="n">1° lugar</th></tr></thead><tbody>
     ${list.map(c => { const r = resumenCot(c); return `<tr class="click" data-go="#cot/${c.id}"><td><b>${esc(c.proceso)}</b>${c.obs ? `<div class="small muted">${esc(c.obs)}</div>` : ''}</td><td>${esc(c.apertura || fdate(c.fecha))}</td>
       <td class="n">${r.n}</td><td class="n">${money(r.total)}</td><td class="n">${pct(r.margen)}</td><td>${pillEstado(c.estado)}</td><td>${esc(c.oc || '')}</td>
@@ -228,6 +228,7 @@ function vCots() {
   const upd = () => { fCots.q = $('#q').value; fCots.mes = $('#mes').value; fCots.estado = $('#est').value; const p = $('#q').selectionStart; vCots(); $('#q').focus(); $('#q').setSelectionRange(p, p); };
   $('#q').oninput = upd; $('#mes').onchange = upd; $('#est').onchange = upd;
   $('#nueva').onclick = nuevaCot;
+  $('#ped').onclick = () => pickFile('.pdf', importarPedido);
   $$('tr[data-go]').forEach(tr => tr.onclick = () => location.hash = tr.dataset.go);
 }
 function nuevaCot() {
@@ -276,6 +277,8 @@ function planCols(sin = []) {
     { key: 'detalle', title: 'DETALLE', w: 250, type: T, edit: 1, get: r => r.detalle, tip: 'Doble click: historial de precios y competencia' , onOpen: r => historial(r) },
     { key: 'monodroga', title: 'MONODROGA', w: 140, type: T, edit: 1, get: r => r.monodroga },
     { key: 'laboratorio', title: 'LABORATORIO', w: 160, type: T, edit: 1, get: r => r.laboratorio },
+    { key: 'desc_cliente', title: 'Descripción pedido', w: 200, type: T, edit: 1, get: r => r.desc_cliente || '', tip: 'Como figura el renglón en el pedido de cotización' },
+    { key: 'cod_cliente', title: 'Cód. cliente', w: 76, type: T, edit: 1, get: r => r.cod_cliente || '', tip: 'Código del cliente (MED…). Sirve para que el próximo pedido proponga el mismo producto' },
     { key: 'pvp', title: 'PVP', w: 96, type: N, edit: 1, get: r => r.pvp, fmt: n2 },
     { key: 'psl', title: 'PSL', w: 96, type: N, edit: 1, get: r => r.psl, fmt: n2 },
     { key: 'dtocpa', title: 'DTOCPA', w: 60, type: N, edit: 1, get: r => r.dtocpa, fmt: nG },
@@ -479,7 +482,7 @@ function vPlanilla(tab) {
   const t = (k, l, hoja) => `<a href="#planilla/${encodeURIComponent(k)}" class="${k === tab ? 'on' : ''}" ${hoja ? `data-hoja="${esc(k)}" title="Doble click para renombrar · click derecho para más opciones"` : ''}>${esc(l)}</a>`;
   const vacia = !ESPECIALES(tab) && !rowsFn().length;
   shell(`<div class="xltop"><span class="ttl">Planilla</span><span class="sub">Hoja <b>${esc(tab === 'ADJ' ? 'Adjudicados' : tab === 'TODAS' ? 'Todas' : tab)}</b></span><span class="spacer"></span>
-    <button class="btn" id="nc">+ Nueva cotización</button><button class="btn" id="xls">Exportar hoja a Excel</button></div>
+    <button class="btn pri" id="ped">Importar pedido (PDF)</button><button class="btn" id="nc">+ Nueva cotización</button><button class="btn" id="xls">Exportar hoja a Excel</button></div>
     ${vacia ? `<div class="card" style="padding:10px 14px;margin-bottom:8px">Hoja vacía. Escribí en la fila <b>＋</b> empezando por la columna <b>Proceso</b> (ej. EXPTE 252000): se crea la cotización en esta hoja y después cargás los renglones debajo.</div>` : ''}
     <div id="gh"></div>
     <div class="xltabs"><a href="#" id="addHoja" title="Nueva hoja" style="font-weight:700">＋</a>${lista.map(h => t(h, h, true)).join('')}<span class="sep"></span>${t('TODAS', 'Todas')}${t('ADJ', 'Adjudicados')}${ocs.length ? '<span class="sep"></span>' + ocs.slice(0, 30).map(o => t('OC ' + o, 'OC ' + o)).join('') : ''}</div>${AYUDA}`, { full: true });
@@ -487,6 +490,9 @@ function vPlanilla(tab) {
   const procDef = () => { const g = host._grid; const v = g ? g.view : []; const last = v[v.length - 1]; return last ? (I.cot.get(last.cotizacion_id) || {}).proceso : ''; };
   const g = montarGrilla(host, rowsFn, { id: 'plan', procDef, hoja: ESPECIALES(tab) ? null : tab });
   $('#nc').onclick = nuevaCot;
+  $('#ped').onclick = () => pickFile('.pdf', importarPedido);
+  host.addEventListener('dragover', e => e.preventDefault());
+  host.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f && /\.pdf$/i.test(f.name)) { e.preventDefault(); importarPedido(f); } });
   $('#xls').onclick = () => exportGrilla(g, 'Planilla ' + (tab === 'ADJ' ? 'Adjudicados' : tab));
   // ---- hojas: agregar / renombrar / eliminar ----
   $('#addHoja').onclick = e => { e.preventDefault(); pedirNombre('Nueva hoja', siguienteHoja(lista), async v => {
@@ -667,6 +673,126 @@ function vComps() {
   dropZone($('#drop'), '.pdf,.xlsx,.xls', f => importarActa(f));
   $$('tr[data-go]').forEach(tr => tr.onclick = () => location.hash = tr.dataset.go);
 }
+// ======================================================================
+//  Importar pedido de cotización (PDF de Bionexo) → cotización nueva
+// ======================================================================
+function candidatosPedido() {
+  const hist = new Map(), cli = new Map(), porDesc = new Map();
+  for (const it of S.items) {
+    if (!it.codigo) continue;
+    const c = I.cot.get(it.cotizacion_id) || {}; const f = c.fecha || '';
+    const h = hist.get(it.codigo);
+    if (!h || f > h.fecha) hist.set(it.codigo, { ...it, fecha: f, fuente: 'hist', veces: (h ? h.veces : 0) + 1 }); else h.veces++;
+    if (it.cod_cliente) { const k = it.cod_cliente.toUpperCase(); const x = cli.get(k); if (!x || f > x.fecha) cli.set(k, { ...it, fecha: f, fuente: 'cliente' }); }
+    if (it.desc_cliente) { const k = P.norm(it.desc_cliente); const x = porDesc.get(k); if (!x || f > x.fecha) porDesc.set(k, { ...it, fecha: f, fuente: 'cliente' }); }
+  }
+  // descripciones de actas ya vinculadas a un renglón nuestro
+  for (const r of S.rens) { if (!r.item_id) continue; const it = I.item.get(r.item_id); if (!it || !it.codigo) continue; const k = P.norm(r.descripcion); const f = fechaRen(r); const x = porDesc.get(k); if (!x || f > x.fecha) porDesc.set(k, { ...it, fecha: f, fuente: 'cliente' }); }
+  const base = [...hist.values()];
+  for (const k of S.costos) if (!hist.has(k.codigo)) base.push({ ...k, fuente: 'costos' });
+  return { base, cli, porDesc };
+}
+function sugerirRenglon(r, C) {
+  const out = [];
+  const a = r.cod_cliente && C.cli.get(r.cod_cliente.toUpperCase());
+  const b = C.porDesc.get(P.norm(r.descripcion));
+  for (const x of [a, b]) if (x && !out.some(o => o.codigo === x.codigo)) out.push({ ...x, fuente: 'cliente', score: 99 });
+  for (const s of P.sugerir(r.descripcion, C.base, 8)) if (!out.some(o => o.codigo === s.codigo)) out.push(s);
+  return out.slice(0, 8);
+}
+function datosProducto(c) {
+  // datos vigentes del producto (costos de hoy si están cargados) + último margen usado
+  const k = I.costo.get(c.codigo + '|' + (c.lista || '')) || I.costoCod.get(c.codigo) || c;
+  return { codigo: c.codigo, lista: c.lista || k.lista || '', detalle: k.detalle || c.detalle, monodroga: k.monodroga || c.monodroga, laboratorio: k.laboratorio || c.laboratorio,
+    pvp: k.pvp ?? c.pvp, psl: k.psl ?? c.psl, dtocpa: k.dtocpa ?? c.dtocpa, costo: k.costo ?? c.costo, dcto_psl: c.fuente !== 'costos' ? c.dcto_psl ?? null : null, plazo: c.plazo ?? null,
+    margenPrev: c.fuente !== 'costos' ? c.margen : null, fechaPrev: c.fuente !== 'costos' ? c.fecha : null };
+}
+const hojaDeFecha = f => f ? MESES_N[+f.slice(5, 7) - 1] + ' ' + f.slice(0, 4) : hojaActual();
+async function importarPedido(file) {
+  toast('Leyendo el pedido…');
+  let ped;
+  try { ped = await P.parsePedidoPDF(await pdfjsLib(), new Uint8Array(await file.arrayBuffer())); }
+  catch (e) { return toast(e.message, 6000); }
+  const C = candidatosPedido();
+  const filas = ped.renglones.map(r => { const sug = sugerirRenglon(r, C); return { r, sug, sel: sug[0] || null, on: !!sug[0] }; });
+  const existe = S.cots.find(c => P.procesoKey(c.proceso) === P.procesoKey(ped.proceso) && ped.proceso);
+  const yaRen = new Set(existe ? (I.itemsByCot.get(existe.id) || []).map(i => i.renglon) : []);
+  if (existe) filas.forEach(f => { if (yaRen.has(f.r.renglon)) f.on = false; });
+  const mant = (ped.terminos.match(/MANTENIMIENTO DE OFERTA\s*([^-]*)/i) || [])[1] || '';
+  let modoMargen = 'ultimo';
+  const precioFila = f => {
+    if (!f.sel) return { cm: null, m: null, p: null };
+    const d = datosProducto(f.sel); const cm = P.costoMeta(d);
+    const m = modoMargen === 'ultimo' && d.margenPrev != null ? d.margenPrev : conf('margenObjetivo');
+    return { d, cm, m, p: P.precioDe(cm, m) };
+  };
+  const badge = s => s ? `<span class="pill ${s.fuente === 'cliente' ? 'ok' : s.fuente === 'hist' ? 'info' : ''}" title="${s.fuente === 'cliente' ? 'Mismo código/descripción del cliente que ya cotizamos' : s.fuente === 'hist' ? 'Producto que ya cotizamos antes' : 'Sugerido desde la lista de costos'}">${s.fuente === 'cliente' ? 'ya cotizado' : s.fuente === 'hist' ? 'historial' : 'costos'}</span>` : '<span class="pill warn">sin producto</span>';
+  const filaHTML = (f, i) => {
+    const x = precioFila(f); const u = f.sel ? intel({ codigo: f.sel.codigo, monodroga: f.sel.monodroga, id: -1, cotizacion_id: -1 }).ultimo : null;
+    return `<tr data-i="${i}" style="${yaRen.has(f.r.renglon) ? 'opacity:.55' : ''}"><td class="c"><input type="checkbox" data-on ${f.on ? 'checked' : ''}></td><td class="n">${f.r.renglon}</td>
+      <td class="wrap"><b>${esc(f.r.descripcion)}</b><div class="small muted">${esc(f.r.cod_cliente)} · ${esc(f.r.unidad || '')}${f.r.marcas ? ' · ' + esc(f.r.marcas) : ''}${yaRen.has(f.r.renglon) ? ' · <b>ya está en la cotización</b>' : ''}</div></td>
+      <td class="n">${nf0.format(f.r.cantidad || 0)}</td>
+      <td><select class="in" data-sel style="max-width:300px;font-size:12.5px;padding:3px 6px">${f.sug.map((s, k) => `<option value="${k}" ${s === f.sel ? 'selected' : ''}>${esc(s.detalle)} · ${esc(s.codigo)}</option>`).join('')}<option value="-1" ${!f.sel ? 'selected' : ''}>— sin producto (cargar a mano) —</option></select><div style="margin-top:2px">${badge(f.sel)}</div></td>
+      <td class="n">${money(x.cm)}</td><td class="n">${x.m != null ? pct(x.m) : '—'}</td><td class="n"><b>${money(x.p)}</b></td>
+      <td class="small">${u ? `${money(u.a.unitComp)} ${esc(P.canonProv(u.a.mejorComp.proveedor))}<div class="muted">${fdate(u.fecha)}</div>` : '<span class="muted">—</span>'}</td></tr>`;
+  };
+  const o = modal(`<h2>Importar pedido de cotización</h2><p class="sub">${esc(ped.titulo)}</p>
+    <div class="grid2" style="margin:10px 0">
+      <label class="f">Proceso<input class="in" id="pp" value="${esc(ped.proceso)}"></label>
+      <label class="f">Apertura<input class="in" id="pa" value="${esc(ped.apertura)}"></label>
+      <label class="f">Hoja<input class="in" id="ph" value="${esc(existe ? hojaDe(existe) : hojaDeFecha(ped.fecha))}"></label>
+      <label class="f">Condición<input class="in" id="pc" value="${esc(ped.pago)}"></label>
+      <label class="f">Mant. oferta<input class="in" id="pm" value="${esc(mant.trim())}"></label>
+      <label class="f">Observaciones<input class="in" id="po" value="${esc([ped.plan.replace(/\s*T\d+\s*E\d+\s*$/, ''), ped.observaciones].filter(Boolean).join(' · '))}"></label></div>
+    ${existe ? `<p class="warn small">${esc(existe.proceso)} ya existe con ${yaRen.size} renglones: se agregan solo los que marques (los que ya están vienen destildados).</p>` : ''}
+    <div class="row" style="margin:6px 0 10px"><span id="cnt" class="small"></span><span class="spacer"></span>
+      <label class="small row" style="gap:4px"><input type="radio" name="mm" value="ultimo" checked> Margen: el último usado para ese producto</label>
+      <label class="small row" style="gap:4px"><input type="radio" name="mm" value="obj"> el objetivo (${pct(conf('margenObjetivo'), 0)}) para todos</label>
+      <button class="btn sm" id="todos">Tildar todos</button><button class="btn sm" id="ninguno">Destildar todos</button></div>
+    <div class="tw" style="max-height:52vh"><table class="t"><thead><tr><th class="c">Cotizar</th><th class="n">R</th><th>Renglón del pedido</th><th class="n">Cant.</th><th>Producto propuesto</th><th class="n">Costo</th><th class="n">Margen</th><th class="n">Precio unit.</th><th>Últ. ganador</th></tr></thead><tbody id="pt">${filas.map(filaHTML).join('')}</tbody></table></div>
+    <p class="legend">Revisá sobre todo los que no dicen “ya cotizado”. Los renglones sin producto se cargan igual (con la descripción del pedido) si los dejás tildados, para completarlos a mano en la planilla. Lo que elijas acá queda aprendido para el próximo pedido.</p>
+    <div class="row" style="margin-top:12px"><span class="spacer"></span><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Crear cotización</button></div>`, { side: true });
+  $('.drawer', o).style.width = 'min(1250px,100%)';
+  const cnt = () => { const n = filas.filter(f => f.on).length, s = filas.filter(f => f.on && f.sel).length; $('#cnt', o).innerHTML = `<b>${n}</b> de ${filas.length} renglones a cotizar · ${s} con producto · ${filas.filter(f => f.sel && f.sel.fuente === 'cliente').length} reconocidos de pedidos anteriores`; };
+  const redraw = i => { const tr = $(`tr[data-i="${i}"]`, o); tr.outerHTML = filaHTML(filas[i], i); cnt(); };
+  $('#pt', o).addEventListener('change', e => {
+    const i = +e.target.closest('tr').dataset.i; const f = filas[i];
+    if (e.target.matches('[data-on]')) { f.on = e.target.checked; cnt(); return; }
+    if (e.target.matches('[data-sel]')) { const k = +e.target.value; f.sel = k >= 0 ? f.sug[k] : null; if (f.sel) f.on = true; redraw(i); }
+  });
+  $$('input[name=mm]', o).forEach(r => r.onchange = () => { modoMargen = r.value; $('#pt', o).innerHTML = filas.map(filaHTML).join(''); });
+  $('#todos', o).onclick = () => { filas.forEach(f => f.on = true); $('#pt', o).innerHTML = filas.map(filaHTML).join(''); cnt(); };
+  $('#ninguno', o).onclick = () => { filas.forEach(f => f.on = false); $('#pt', o).innerHTML = filas.map(filaHTML).join(''); cnt(); };
+  cnt();
+  $('#ok', o).onclick = async () => {
+    const sel = filas.filter(f => f.on); if (!sel.length) return toast('No hay renglones tildados');
+    const btn = $('#ok', o); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Creando';
+    try {
+      const proceso = $('#pp', o).value.trim() || ped.proceso || ('PEDIDO ' + ped.idPedido);
+      const ap = $('#pa', o).value.trim(), hoja = $('#ph', o).value.trim().toUpperCase() || hojaDeFecha(ped.fecha);
+      let cot = S.cots.find(c => P.norm(c.proceso) === P.norm(proceso));
+      const cab = { apertura: ap, fecha: P.fechaDe(ap) || ped.fecha, hoja, condicion: $('#pc', o).value.trim() || null, mant_oferta: $('#pm', o).value.trim() || null, obs: $('#po', o).value.trim() || null, cliente: 'ISSN', updated_by: who() };
+      if (!cot) [cot] = await db.ins('cc_cotizaciones', [{ proceso, estado: 'abierta', ...cab }]);
+      else Object.assign(cot, await db.upd('cc_cotizaciones', cot.id, { hoja, apertura: ap || cot.apertura, fecha: cab.fecha || cot.fecha }));
+      if (!hojasGuardadas().includes(hoja)) await guardarHojas([...hojasGuardadas(), hoja]);
+      const rows = sel.map(f => {
+        const base = { cotizacion_id: cot.id, renglon: f.r.renglon, orden: f.r.renglon, cantidad: f.r.cantidad, cod_cliente: f.r.cod_cliente || null, desc_cliente: f.r.descripcion, obs: f.r.marcas && !/acepta alternativa/i.test(f.r.marcas) ? 'Marcas: ' + f.r.marcas : null };
+        if (!f.sel) return { ...base, detalle: f.r.descripcion, margen: conf('margenObjetivo') };
+        const x = precioFila(f); const { margenPrev, fechaPrev, ...d } = x.d;
+        return { ...base, ...d, margen: x.m, precio_unit: x.p };
+      });
+      const ins = await db.ins('cc_items', rows);
+      S.items.push(...ins); if (!S.cots.includes(cot)) S.cots.push(cot); reindex();
+      UNDO.push([...ins.map(i => ({ t: 'ins', id: i.id }))]);
+      o.remove(); toast(`${ins.length} renglones cargados en ${proceso}`);
+      location.hash = '#planilla/' + encodeURIComponent(hoja);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Crear cotización';
+      toast(/cod_cliente|desc_cliente|hoja/.test(e.message) ? 'Falta actualizar la base: corré de nuevo schema.sql en Supabase (SQL Editor) y reintentá.' : 'Error: ' + e.message, 8000);
+    }
+  };
+}
+
 let _pdfjs = null;
 async function pdfjsLib() {
   if (!_pdfjs) { _pdfjs = await import('./lib/pdf.min.mjs'); _pdfjs.GlobalWorkerOptions.workerSrc = new URL('lib/pdf.worker.min.mjs', location.href).href; }
@@ -677,7 +803,10 @@ async function importarActa(file, cotId) {
   toast('Leyendo el acta…');
   try {
     acta = /\.pdf$/i.test(file.name) ? await P.parseActaPDF(await pdfjsLib(), new Uint8Array(await file.arrayBuffer())) : P.parseActa(XLSX, await readWb(file));
-  } catch (e) { return toast(e.message, 6000); }
+  } catch (e) {
+    if (/\.pdf$/i.test(file.name)) { try { const pj = await pdfjsLib(); const d = await pj.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise; const t = (await (await d.getPage(1)).getTextContent()).items.map(i => i.str).join(' '); if (/Pedido de Cotizaci/i.test(t) && /Marcas preferidas|Código:/i.test(t)) { toast('Esto es un pedido de cotización, no un acta: lo abro como pedido'); return importarPedido(file); } } catch { /* */ } }
+    return toast(e.message, 6000);
+  }
   const key = P.procesoKey(acta.proceso);
   const sug = cotId || (S.cots.find(c => P.procesoKey(c.proceso) === key) || {}).id || '';
   const opts = [...S.cots].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).map(c => `<option value="${c.id}" ${c.id === sug ? 'selected' : ''}>${esc(c.proceso)} · ${fdate(c.fecha)}</option>`).join('');

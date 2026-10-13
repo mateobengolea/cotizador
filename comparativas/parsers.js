@@ -268,6 +268,109 @@
     return { titulo, proceso: m ? 'EXPTE ' + m[1] : '', renglones: [...ren.values()].sort((a, b) => a.renglon - b.renglon) };
   }
 
+  // ---------- Pedido de cotización (Bionexo) desde PDF ----------
+  async function parsePedidoPDF(pdfjs, data) {
+    const doc = await pdfjs.getDocument({ data, isEvalSupported: false, disableFontFace: true, useSystemFonts: false, verbosity: 0 }).promise;
+    const rows = []; const cab = {}; const textoCab = [];
+    for (let pn = 1; pn <= doc.numPages; pn++) {
+      const pg = await doc.getPage(pn);
+      const items = (await pg.getTextContent()).items.filter(i => i.str && i.str.trim())
+        .map(i => ({ s: i.str.trim(), x: i.transform[4], y: i.transform[5], w: i.width }));
+      // cabecera (página 1)
+      if (pn === 1) {
+        const lab = (re) => { const l = items.find(i => re.test(i.s)); if (!l) return ''; return items.filter(i => i !== l && i.x > l.x + l.w - 1 && i.x < l.x + 260 && Math.abs(i.y - l.y) < 9 && !/:$/.test(i.s)).sort((a, b) => b.y - a.y || a.x - b.x).map(i => i.s).join(' '); };
+        const t = items.find(i => /^ID:\s*\d+/.test(i.s));
+        cab.titulo = t ? t.s : '';
+        const venc = items.find(i => /^Vencimiento:?$/.test(i.s));
+        if (venc) { const v = items.filter(i => Math.abs(i.y - venc.y) < 1.5 && i.x > venc.x && i.x < venc.x + 250).sort((a, b) => a.x - b.x).map(i => i.s).join(' '); cab.vencimiento = v; }
+        cab.terminos = lab(/^Términos y Condiciones:?$/i); cab.pago = lab(/^Formas de pago:?$/i); cab.observaciones = lab(/^Observaciones:?$/i); cab.contacto = lab(/^Contacto:?$/i);
+      }
+      // columnas por encabezados "Item" y "Cant."
+      const hItems = items.filter(i => i.s === 'Item').sort((a, b) => a.x - b.x);
+      const hCant = items.filter(i => /^Cant\.?$/.test(i.s)).sort((a, b) => a.x - b.x);
+      let cols;
+      if (hItems.length && hCant.length) cols = hItems.map((h, k) => ({ x0: h.x - 12, x1: hItems[k + 1] ? hItems[k + 1].x - 12 : 1e9, num1: h.x + 22, cant0: (hCant[k] || hCant[0]).x - 16 }));
+      else {   // páginas sin encabezado: usar las de la página 1
+        cols = parsePedidoPDF._cols; if (!cols) continue;
+      }
+      parsePedidoPDF._cols = cols;
+      let topY = 1e9;
+      if (hItems.length) { const y0 = hItems[0].y; topY = Math.min(...items.filter(i => Math.abs(i.y - y0) < 7 && /^(Item|Articulo|Art[ií]culo|Cant\.?|Precio|Unitario)$/i.test(i.s)).map(i => i.y)) - 1; parsePedidoPDF._top = true; }
+      for (const col of cols) {
+        const ci = items.filter(i => i.x >= col.x0 && i.x < col.x1 && i.y < topY);
+        const nums = ci.filter(i => i.x < col.num1 && /^\d{1,4}$/.test(i.s)).sort((a, b) => b.y - a.y);
+        if (!nums.length) continue;
+        const R = nums.map(n => ({ n: +n.s, y: n.y, desc: [], qty: [], marcas: '', med: '' }));
+        const owner = y => { let best = null; for (const r of R) if (r.y <= y + 9.5 && (!best || r.y > best.y)) best = r; return best; };
+        const ownerAbove = y => { let best = null; for (const r of R) if (r.y >= y - 0.5 && (!best || r.y < best.y)) best = r; return best; };
+        const near = y => R.reduce((a, r) => Math.abs(r.y - y) < Math.abs(a.y - y) ? r : a, R[0]);
+        const marcasY = new Set();
+        for (const i of ci) if (/^Marcas preferidas/i.test(i.s)) { const r = ownerAbove(i.y); if (r) { marcasY.add(i.y.toFixed(1)); const v = ci.filter(j => Math.abs(j.y - i.y) < 1 && j.x > i.x && j.x < col.cant0 + 5).map(j => j.s).join(' ') || i.s.replace(/^Marcas preferidas:?\s*/i, ''); r.marcas = v.trim(); } }
+        for (const i of ci) {
+          if (nums.includes(i) || /^Marcas preferidas/i.test(i.s) || marcasY.has(i.y.toFixed(1)) && i.x < col.cant0) continue;
+          if (/^imprimir|^cerrar|^https?:/i.test(i.s)) continue;
+          if (/^Código:?/i.test(i.s)) { const r = owner(i.y); const m = i.s.match(/(MED\w+|[A-Z]{2,}\d+)/); if (r && m) r.med = m[1]; continue; }
+          if (/^(MED\d+|[A-Z]{3}\d{3,})$/.test(i.s)) { const r = owner(i.y); if (r && !r.med) r.med = i.s; continue; }
+          if (i.x >= col.cant0 && (/^\d[\d.,]*(\s|$)/.test(i.s) || /^[A-Za-zÁÉÍÓÚáéíóúñÑ]+$/.test(i.s))) { const r = near(i.y); if (/^\d/.test(i.s) || r.qty.length) { r.qty.push(i); continue; } }
+          const r = owner(i.y); if (r) r.desc.push(i);
+        }
+        for (const r of R) {
+          const qtxt = r.qty.sort((a, b) => b.y - a.y || a.x - b.x).map(i => i.s).join(' ');
+          const m = qtxt.match(/^([\d.,]+)\s*(.*)$/);
+          rows.push({ renglon: r.n, descripcion: r.desc.sort((a, b) => b.y - a.y || a.x - b.x).map(i => i.s).join(' ').replace(/\s+/g, ' ').trim(),
+            cod_cliente: r.med, cantidad: m ? num(m[1]) : null, unidad: m ? m[2].trim() : qtxt, marcas: r.marcas === '-' ? '' : r.marcas });
+        }
+      }
+    }
+    delete parsePedidoPDF._cols;
+    if (!rows.length) throw new Error('No reconocí renglones en el PDF. ¿Es un pedido de cotización de Bionexo?');
+    rows.sort((a, b) => a.renglon - b.renglon);
+    const mE = cab.titulo.match(/\bE\s?(\d{5,7})\b/) || cab.titulo.match(/EXPTE\.?\s*(\d{5,7})/i);
+    const mH = (cab.vencimiento || '').match(/(\d{1,2}\/\d{1,2}\/\d{2,4}).*?(\d{1,2}):(\d{2})/);
+    const plan = (cab.titulo.match(/Pedido de Cotizaci[oó]n\s*-\s*(.*)$/i) || [])[1] || '';
+    return { ...cab, plan: plan.trim(), proceso: mE ? 'EXPTE ' + mE[1] : '', apertura: mH ? `${mH[1]} - ${mH[2]}:${mH[3]}hs` : (cab.vencimiento || ''), fecha: fechaDe(cab.vencimiento), idPedido: (cab.titulo.match(/^ID:\s*(\d+)/) || [])[1] || '', renglones: rows };
+  }
+
+  // ---------- Sugerir producto para una descripción de pedido ----------
+  const STOP = new Set(['MG', 'ML', 'MCG', 'UI', 'GR', 'G', 'X', 'COMP', 'COMPR', 'COMPRIMIDOS', 'REC', 'CAPS', 'CAP', 'CAPSULAS', 'AMP', 'AMPOLLA', 'VIAL', 'VIALES', 'JGA', 'JGAS', 'JER', 'JERINGA', 'PRELL', 'PRELLENADA', 'PREL', 'LAP', 'LAPIC', 'INY', 'INYECTABLE', 'FCO', 'F', 'A', 'FA', 'SC', 'IV', 'LP', 'CART', 'CARTUCHO', 'SOL', 'ORAL', 'POLVO', 'PVO', 'CON', 'DE', 'EN', 'POR', 'PARA', 'ENV', 'ENVASE', 'UNIDADES', 'AUTOINY', 'DISP', 'KIT', 'LIOF', 'DESC', 'APLIC', 'SIN', 'MAS', 'NAS', 'TAB', 'ACETATO', 'GENERI', 'GENERICO']);
+  const palabras = s => norm(s).replace(/[^A-Z0-9., ]/g, ' ').split(/[\s.,]+/).filter(w => w.length >= 3 && !/^\d/.test(w) && !STOP.has(w));
+  const nums = s => { const out = []; norm(s).replace(/(\d+(?:[.,]\d+)?)/g, (m) => { out.push(+m.replace(',', '.')); return m; }); return out; };
+  const GENERICAS = new Set(['CARBONATO', 'HUMANA', 'HUMANO', 'RECOMBINANTE', 'SODICA', 'SODICO', 'CLORHIDRATO', 'ACIDO', 'MESILATO', 'SULFATO', 'FOSFATO', 'CITRATO', 'MALEATO', 'TARTRATO', 'BROMHIDRATO', 'POTASICO', 'CALCICO', 'MAGNESICO', 'DIHIDRATO', 'MONOHIDRATO', 'BASE', 'ASOC', 'ASOCIADO', 'COMPUESTO', 'PEGILADO', 'ALFA', 'BETA', 'TIPO']);
+  const SINON = [['GAMMAGLOBULINA', 'INMUNOGLOBULINA'], ['SOMATOTROFINA', 'SOMATROPINA', 'SOMATOTROPINA', 'SOMAOTROFINA'], ['ROMISPLOSTIN', 'ROMIPLOSTIM']];
+  function lev(a, b) { if (Math.abs(a.length - b.length) > 2) return 9; const d = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) d[0][j] = j; for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; }
+  const parecida = (a, b) => a === b || SINON.some(g => g.includes(a) && g.includes(b)) || (a.length >= 6 && b.length >= 6 && a.slice(0, 4) === b.slice(0, 4) && lev(a, b) <= 2);
+  const enD = (w, D) => D.some(x => parecida(w, x));
+  const concentraciones = s => { const out = []; norm(s).replace(/(\d+(?:[.,]\d+)?)\s*(MG|MCG|UI|GR|G|ML|%)(?![A-Z])/g, (m, n, u) => { let v = +n.replace(',', '.'); if (u === 'GR' || u === 'G') v *= 1000; if (u !== 'ML') out.push(v); return m; }); return out; };
+  // candidatos: [{codigo, detalle, monodroga, laboratorio, lista, costo..., fuente:'hist'|'costos', fecha, veces}]
+  function sugerir(desc, cands, max = 6) {
+    const D = palabras(desc), N = nums(desc), K = concentraciones(desc);
+    if (!D.length) return [];
+    const res = [];
+    for (const c of cands) {
+      const mono = palabras(c.monodroga).filter(w => !GENERICAS.has(w)), det = palabras(c.detalle);
+      const d0 = det[0];
+      const monoHits = mono.filter(w => enD(w, D)).length;
+      const brandHit = d0 && !mono.includes(d0) && enD(d0, D);
+      if (!monoHits && !brandHit) continue;
+      let s = 0;
+      if (monoHits) s += 6 + monoHits;
+      if (brandHit) s += 6;
+      if (monoHits && mono.length > 1 && mono.some(w => !enD(w, D)) && !brandHit) s -= 2;   // combinación distinta (A+B vs A)
+      const NC = nums(c.detalle), KC = concentraciones(c.detalle);
+      let nm = 0; for (const n of N) if (NC.some(x => Math.abs(x - n) < 1e-9)) nm++;
+      s += nm * 2;
+      if (K.length && KC.length) s += KC.some(x => Math.abs(x - K[0]) < 1e-9) ? 3 : -4;     // concentración principal
+      if (c.fuente === 'hist') s += 3 + Math.min(2, (c.veces || 1) - 1) * 0.5;
+      if (c.fuente === 'cliente') s += 30;           // mismo código del cliente (MED…) que ya cotizamos antes
+      if (c.costo) s += 0.5;
+      res.push({ ...c, score: s });
+    }
+    res.sort((a, b) => b.score - a.score || String(b.fecha || '').localeCompare(String(a.fecha || '')));
+    const seen = new Set(); const out = [];
+    for (const r of res) { if (seen.has(r.codigo)) continue; seen.add(r.codigo); out.push(r); if (out.length >= max) break; }
+    return out;
+  }
+
   // ---------- Vinculación renglón de acta ↔ ítem cotizado ----------
   const primeraPalabra = s => norm(s).split(/[ +\-\/(]/).filter(w => w.length > 2)[0] || '';
   const numeros = s => (norm(s).match(/\d+(?:[.,]\d+)?/g) || []).map(x => x.replace(',', '.'));
@@ -276,6 +379,7 @@
     const mono = primeraPalabra(it.monodroga);
     const d = norm(ren.descripcion);
     if (mono && d.includes(mono)) p += 4;
+    if (it.desc_cliente && norm(it.desc_cliente) === d) p += 8;
     if (it.renglon === ren.renglon) p += 3;
     if (ren.cantidad != null && it.cantidad === ren.cantidad) p += 2;
     const nd = numeros(ren.descripcion), ni = numeros(it.detalle);
@@ -331,6 +435,6 @@
     return s.split(' ').map(w => w.length <= 3 && w !== 'META' ? w : w[0] + w.slice(1).toLowerCase()).join(' ').replace(/\(.*$/, '').trim();
   }
 
-  const api = { canonProv, parseActaPDF, celdaActa, norm, num, txt, codigo, fechaDe, procesoKey, costoMeta, margenDe, precioDe, parseAcumulado, parseCostos, parseActa, detectarColumnas, vincular, puntaje, analizarRenglon, MESES };
+  const api = { parsePedidoPDF, sugerir, palabras, canonProv, parseActaPDF, celdaActa, norm, num, txt, codigo, fechaDe, procesoKey, costoMeta, margenDe, precioDe, parseAcumulado, parseCostos, parseActa, detectarColumnas, vincular, puntaje, analizarRenglon, MESES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.P = api;
 })(typeof window !== 'undefined' ? window : globalThis);
