@@ -419,13 +419,39 @@ function ordenPlanilla(a, b) {
   const ca = I.cot.get(a.cotizacion_id) || {}, cb = I.cot.get(b.cotizacion_id) || {};
   return String(ca.fecha || '').localeCompare(String(cb.fecha || '')) || (ca.id - cb.id) || ((a.orden ?? 1e9) - (b.orden ?? 1e9)) || ((a.renglon ?? 0) - (b.renglon ?? 0)) || a.id - b.id;
 }
+const ocultasDe = id => { const v = conf('colsOcultas'); return (v && Array.isArray(v[id])) ? v[id] : []; };
+async function setOcultas(id, keys) { const v = { ...(conf('colsOcultas') || {}) }; v[id] = [...new Set(keys)]; await db.ups('cc_config', [{ clave: 'colsOcultas', valor: v }], ['clave']); S.cfg.colsOcultas = v; }
+const filaOculta = r => !!(((r._base || r).fmt) || {}).__oculta;
+async function ocultarFilas(rows, ocultar) {
+  const undo = []; const vistos = new Set();
+  for (const r of rows) {
+    const it = r._base || r; if (vistos.has(it)) continue; vistos.add(it);
+    const f = { ...(it.fmt || {}) }; if (ocultar) f.__oculta = 1; else delete f.__oculta;
+    undo.push({ t: 'item', id: it.id, before: { fmt: it.fmt || null } });
+    try { Object.assign(it, await db.upd('cc_items', it.id, { fmt: Object.keys(f).length ? f : null })); }
+    catch (e) { if (/fmt/.test(e.message)) { toast('Para ocultar filas, corré de nuevo schema.sql en Supabase.', 7000); return; } throw e; }
+  }
+  if (undo.length) UNDO.push(undo);
+  toast(ocultar ? `${undo.length} fila(s) oculta(s)` : `${undo.length} fila(s) visibles de nuevo`);
+}
 function montarGrilla(host, rowsFn, { id, sin = [], procDef, hoja, sinNuevas }) {
-  const cols = planCols(sin);
+  const full = planCols(sin); full.forEach((c, i) => c.L = colLetter(i));
+  const ocultas = new Set(ocultasDe(id).filter(k => full.some(c => c.key === k)));
+  const cols = []; let pend = [];
+  for (const c of full) { if (ocultas.has(c.key)) { pend.push(c); continue; } c.hidBefore = pend; pend = []; cols.push(c); }
+  const remount = () => route();
   let grid;
   const firsts = () => { const s = new Set(); let prev = null; for (const r of grid.view) { if (prev !== null && r.cotizacion_id !== prev) s.add(r.id); prev = r.cotizacion_id; } return s; };
   let fs = new Set();
   grid = Grid(host, {
-    id, cols, frozen: Math.min(5, cols.findIndex(c => c.key === 'detalle') + 1),
+    id, cols, frozen: cols.filter(c => ['renglon', 'cantidad', 'lista', 'codigo', 'detalle'].includes(c.key)).length,
+    letterOf: key => (full.find(c => c.key === key) || {}).L || '?',
+    rowHidden: filaOculta,
+    onShowRows: async rows => { await ocultarFilas(rows, false); },
+    onHideRows: async rows => { await ocultarFilas(rows, true); },
+    hiddenColsCount: () => ocultas.size,
+    onHideCols: async keys => { if (keys.length >= cols.length) return toast('No se pueden ocultar todas las columnas'); await setOcultas(id, [...ocultas, ...keys]); remount(); },
+    onShowCols: async keys => { await setOcultas(id, keys ? [...ocultas].filter(k => !keys.includes(k)) : []); remount(); },
     onEdit: async ch => {
       const lin = ch.filter(c => c.row._line && c.col.key === 'cantidad');
       for (const c of lin) { const v = P.num(c.value); Object.assign(c.row._line, await db.upd('cc_oc_items', c.row._line.id, { cantidad: v, importe: v != null && c.row._line.precio != null ? v * c.row._line.precio : null })); }
@@ -436,7 +462,14 @@ function montarGrilla(host, rowsFn, { id, sin = [], procDef, hoja, sinNuevas }) 
     onDelete: async rows => { const ok = rows[0] && rows[0]._line ? await quitarDeOC(rows) : await borrarFilas(rows.map(r => r._base || r)); if (ok) grid.setRows(rowsFn()); return ok; },
     onUndo: async () => { await deshacer(); grid.setRows(rowsFn()); },
     ghostText: c => c.key === 'proceso' ? (procDef() || '') : c.key === 'detalle' ? 'escribí acá para agregar…' : '',
-    menu: (rows, row) => menuFilas(rows.map(r => r._base || r), row._base || row),
+    menu: (rows, row) => {
+      const its = menuFilas(rows.map(r => r._base || r), row._base || row);
+      const extra = [{ label: rows.length > 1 ? `Ocultar ${rows.length} filas` : 'Ocultar fila', run: () => ocultarFilas(rows, true) }];
+      if (grid.nHidden) extra.push({ label: `Mostrar filas ocultas (${grid.nHidden})`, run: () => ocultarFilas(grid.rows.filter(filaOculta), false) });
+      const k = its.findIndex(x => x === '-');
+      its.splice(k + 1, 0, ...extra, '-');
+      return its;
+    },
     fmtOf: (r, c) => { const f = (r._base || r).fmt; return f && f[c.key] || null; },
     onFormat: async cells => {
       const por = new Map();

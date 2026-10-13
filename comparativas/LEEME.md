@@ -94,6 +94,7 @@ Es la pantalla principal. Tiene las mismas columnas que la hoja del Excel (R, CA
 - La última fila (＋) sirve para agregar renglones: toma el Proceso de la fila de arriba, o el que escribas. Si el proceso no existe, se crea.
 - Cambiar el Proceso de una fila la mueve a ese proceso.
 - Click derecho en una fila: historial, abrir cotización o acta, duplicar, eliminar.
+- **Ocultar filas y columnas**: click derecho en una fila → *Ocultar fila* (o Ctrl+9); click derecho en la letra o el título de una columna → *Ocultar columna* (o Ctrl+0). Shift+click en las letras selecciona varias. Donde hay ocultas aparece una línea verde: doble click ahí las vuelve a mostrar, o usá el link "mostrar" de la barra de abajo. Las filas y columnas ocultas se guardan y valen para todos.
 - **Formato como en Excel**: la barra de arriba tiene negrita, cursiva, subrayado (Ctrl+B / Ctrl+I / Ctrl+U), color de relleno, color de fuente, bordes (inferior, superior, todos, externos, sin borde), alineación, copiar formato (🖌) y borrar formato. Se aplica a las celdas seleccionadas (click en el número de fila para seleccionar el renglón entero), queda guardado y lo ven todos. *Exportar a Excel* baja los datos sin los colores.
 
 Las comparativas también se ven como planilla: el acta con precio y marca de cada proveedor, el mejor de cada renglón en verde y el nuestro en negrita.

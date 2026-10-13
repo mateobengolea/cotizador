@@ -45,7 +45,7 @@ function Grid(host, opt) {
     table.style.width = (RN + cols.reduce((s, c) => s + c.w, 0)) + 'px';
     const st = i => i < nf ? `position:sticky;left:${L[i]}px;z-index:6;` : '';
     thead.innerHTML =
-      `<tr class="xll"><th class="xlcorner" style="left:0"></th>${cols.map((c, i) => `<th data-c="${i}" class="xlletter ${i === nf - 1 ? 'xlfz' : ''}" style="${st(i)}">${letter(i)}</th>`).join('')}</tr>` +
+      `<tr class="xll"><th class="xlcorner" style="left:0"></th>${cols.map((c, i) => `<th data-c="${i}" class="xlletter ${i === nf - 1 ? 'xlfz' : ''} ${c.hidBefore && c.hidBefore.length ? 'hb' : ''}" style="${st(i)}" ${c.hidBefore && c.hidBefore.length ? `title="Columnas ocultas a la izquierda: ${esc(c.hidBefore.map(h => h.title).join(', '))}. Doble click para mostrarlas"` : ''}>${c.L || letter(i)}</th>`).join('')}</tr>` +
       `<tr class="xlh"><th class="xlcorner" style="left:0"></th>${cols.map((c, i) => `<th data-c="${i}" class="xltitle ${c.live ? 'live' : ''} ${c.edit ? '' : 'calc'} ${i === nf - 1 ? 'xlfz' : ''}" style="${st(i)}" title="${esc(c.tip || c.title)}">${esc(c.title)}${g.sort && g.sort.c === i ? (g.sort.d > 0 ? ' ▲' : ' ▼') : ''}<span class="rz" data-rz="${i}"></span></th>`).join('')}</tr>` +
       `<tr class="xlf"><th class="xlcorner" style="left:0" title="Filtros: texto, o >n, <n, =n para números">⏷</th>${cols.map((c, i) => `<th class="${i === nf - 1 ? 'xlfz' : ''}" style="${st(i)}"><input data-f="${i}" value="${esc(g.filters[i] || '')}" placeholder="filtro"></th>`).join('')}</tr>`;
   }
@@ -87,7 +87,8 @@ function Grid(host, opt) {
     for (let ri = first; ri < last; ri++) {
       const row = g.view[ri] || null;
       const rc = row && opt.rowClass ? opt.rowClass(row) : '';
-      h += `<tr class="${rc}"><th class="xlrn" data-rn="${ri}">${row ? ri + 1 : '＋'}</th>${cols.map((c, ci) => cellHTML(row, ri, ci, L)).join('')}</tr>`;
+      const hb = row && g.hidBefore.get(row);
+      h += `<tr class="${rc}"><th class="xlrn ${hb ? 'hb' : ''}" data-rn="${ri}" ${hb ? `title="${hb.length} fila(s) oculta(s) arriba. Doble click para mostrarlas"` : ''}>${row ? ri + 1 : '＋'}</th>${cols.map((c, ci) => cellHTML(row, ri, ci, L)).join('')}</tr>`;
     }
     h += `<tr style="height:${(nRows() - last) * RH}px"><td colspan="${cols.length + 1}" class="sp"></td></tr>`;
     tbody.innerHTML = h;
@@ -115,6 +116,13 @@ function Grid(host, opt) {
       const c = cols[g.sort.c], d = g.sort.d;
       v = [...v].sort((a, b) => { const x = c.get(a), y = c.get(b); if (x == null || x === '') return 1; if (y == null || y === '') return -1; return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'es', { numeric: true })) * d; });
     }
+    g.hidBefore = new Map(); g.nHidden = 0;
+    if (opt.rowHidden && !g.showHidden) {
+      const out = []; let pend = [];
+      for (const r of v) { if (opt.rowHidden(r)) { pend.push(r); g.nHidden++; } else { if (pend.length) g.hidBefore.set(r, pend); pend = []; out.push(r); } }
+      if (pend.length) g.hidAfter = pend; else g.hidAfter = null;
+      v = out;
+    }
     g.view = v;
   }
 
@@ -131,7 +139,7 @@ function Grid(host, opt) {
     thead.querySelectorAll('th[data-c]').forEach(th => th.classList.toggle('on', +th.dataset.c >= s.c0 && +th.dataset.c <= s.c1));
     // barra de fórmula
     const row = g.view[g.sel.r], c = cols[g.sel.c];
-    ref.textContent = letter(g.sel.c) + (g.sel.r + 1);
+    ref.textContent = (cols[g.sel.c].L || letter(g.sel.c)) + (g.sel.r + 1);
     if (document.activeElement !== fbox) fbox.value = row ? (c.edit ? rawOf(row, c) : (c.formula ? c.formula(g.sel.r + 1, colLetter) : stripTags(c.fmt ? c.fmt(c.get(row), row) : c.get(row) ?? '').trim())) : '';
     fbox.readOnly = !c.edit;
     // estado: suma / promedio / recuento
@@ -139,9 +147,9 @@ function Grid(host, opt) {
     for (let r = s.r0; r <= s.r1 && r < g.view.length; r++) for (let ci = s.c0; ci <= s.c1; ci++) { const v = cols[ci].get(g.view[r]); if (v != null && v !== '') k++; if (typeof v === 'number' && isFinite(v)) { n++; sum += v; if (cols[ci].type !== 'pct') isPct = false; } }
     const f = x => isPct ? (x * 100).toLocaleString('es-AR', { maximumFractionDigits: 2 }) + ' %' : x.toLocaleString('es-AR', { maximumFractionDigits: 2 });
     stat.textContent = k > 1 ? (n ? `Promedio: ${f(sum / n)}   Recuento: ${k}   Suma: ${f(sum)}` : `Recuento: ${k}`) : '';
-    cnt.textContent = `${g.view.length} filas${g.view.length !== g.rows.length ? ` (de ${g.rows.length}, filtradas)` : ''}`;
+    cnt.innerHTML = `${g.view.length} filas${g.view.length + (g.nHidden || 0) !== g.rows.length ? ` (de ${g.rows.length}, filtradas)` : ''}${g.nHidden ? ` · <a href="#" class="xlshowall">${g.nHidden} oculta(s) — mostrar todas</a>` : ''}${opt.hiddenColsCount && opt.hiddenColsCount() ? ` · <a href="#" class="xlshowcols">${opt.hiddenColsCount()} columna(s) oculta(s) — mostrar</a>` : ''}`;
   }
-  const colLetter = key => letter(cols.findIndex(c => c.key === key));
+  const colLetter = key => { const i = cols.findIndex(c => c.key === key); return i < 0 ? (opt.letterOf ? opt.letterOf(key) : '?') : (cols[i].L || letter(i)); };
   function rawOf(row, c) { const v = c.raw ? c.raw(row) : c.get(row); if (v == null) return ''; if (typeof v === 'number') return String(+v.toFixed(6)).replace('.', ','); return String(v); }
   function setSel(r, c, extend) {
     r = Math.max(0, Math.min(nRows() - 1, r)); c = Math.max(0, Math.min(cols.length - 1, c));
@@ -239,6 +247,8 @@ function Grid(host, opt) {
       if (ch.length) apply(ch); return;
     }
     if ((e.ctrlKey || e.metaKey) && opt.onFormat && ['b', 'n', 'i', 'k', 'u', 's'].includes(k.toLowerCase())) { e.preventDefault(); toggle({ b: 'b', n: 'b', i: 'i', k: 'i', u: 'u', s: 'u' }[k.toLowerCase()]); return; }
+    if ((e.ctrlKey || e.metaKey) && k === '9' && opt.onHideRows) { e.preventDefault(); const rows = selRows(); if (rows.length) opt.onHideRows(rows).then(() => g.refresh()); return; }
+    if ((e.ctrlKey || e.metaKey) && k === '0' && opt.onHideCols) { e.preventDefault(); const n = norm(); opt.onHideCols(cols.slice(n.c0, n.c1 + 1).map(x => x.key)); return; }
     if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'z') { e.preventDefault(); opt.onUndo && opt.onUndo().then(() => g.refresh()); return; }
     if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'a') { e.preventDefault(); g.sel = { r: 0, c: 0, r2: g.view.length - 1, c2: cols.length - 1 }; paintSel(); return; }
     if ((e.ctrlKey || e.metaKey) && k === '-') { e.preventDefault(); delRows(); return; }
@@ -264,6 +274,7 @@ function Grid(host, opt) {
   });
   document.addEventListener('mouseup', () => drag = false);
   tbody.addEventListener('dblclick', e => {
+    const rn = e.target.closest('th.xlrn.hb'); if (rn && opt.onShowRows) { const row = g.view[+rn.dataset.rn]; const hb = row && g.hidBefore.get(row); if (hb) opt.onShowRows(hb).then(() => g.refresh()); return; }
     const td = e.target.closest('td.xc'); if (!td) return;
     const c = cols[+td.dataset.c], row = g.view[+td.dataset.r];
     if (c.onOpen && row) return c.onOpen(row);
@@ -375,11 +386,36 @@ function Grid(host, opt) {
   });
 
   // encabezados: orden, filtros, ancho
+  host.querySelector('.xlstatus').addEventListener('click', e => {
+    if (e.target.closest('.xlshowall')) { e.preventDefault(); const all = g.rows.filter(r => opt.rowHidden(r)); opt.onShowRows(all).then(() => g.refresh()); }
+    if (e.target.closest('.xlshowcols')) { e.preventDefault(); opt.onShowCols && opt.onShowCols(null); }
+  });
+  thead.addEventListener('dblclick', e => { const th = e.target.closest('th.xlletter.hb'); if (th && opt.onShowCols) opt.onShowCols(cols[+th.dataset.c].hidBefore.map(h => h.key)); });
+  thead.addEventListener('contextmenu', e => {
+    const th = e.target.closest('th.xlletter,th.xltitle'); if (!th || !opt.onHideCols) return;
+    e.preventDefault();
+    const c = +th.dataset.c; const n = norm();
+    const enSel = c >= n.c0 && c <= n.c1 && n.r0 === 0 && n.r1 >= g.view.length - 1;
+    const keys = enSel ? cols.slice(n.c0, n.c1 + 1).map(x => x.key) : [cols[c].key];
+    if (!enSel) { g.sel = { r: 0, c, r2: Math.max(0, g.view.length - 1), c2: c }; paintSel(); }
+    const items = [{ label: keys.length > 1 ? `Ocultar ${keys.length} columnas` : `Ocultar columna ${cols[c].L || letter(c)} (${cols[c].title})`, run: () => opt.onHideCols(keys) }];
+    const hb = cols[c].hidBefore || [];
+    if (hb.length) items.push({ label: `Mostrar las ocultas a la izquierda (${hb.length})`, run: () => opt.onShowCols(hb.map(h => h.key)) });
+    if (opt.hiddenColsCount && opt.hiddenColsCount()) items.push({ label: 'Mostrar todas las columnas ocultas', run: () => opt.onShowCols(null) });
+    const m = document.createElement('div'); m.className = 'xlmenu';
+    m.innerHTML = items.map((it, i) => `<div data-i="${i}">${esc(it.label)}</div>`).join('');
+    m.style.left = Math.min(e.clientX, innerWidth - 260) + 'px'; m.style.top = e.clientY + 'px';
+    document.body.appendChild(m);
+    const close = () => { m.remove(); document.removeEventListener('mousedown', out, true); };
+    const out = ev => { if (!m.contains(ev.target)) close(); };
+    setTimeout(() => document.addEventListener('mousedown', out, true));
+    m.onclick = ev => { const d = ev.target.closest('[data-i]'); if (!d) return; close(); items[+d.dataset.i].run(); };
+  });
   thead.addEventListener('click', e => {
     if (e.target.closest('.rz') || e.target.closest('input')) return;
     const th = e.target.closest('th.xltitle'); const tl = e.target.closest('th.xlletter');
     if (th) { const c = +th.dataset.c; g.sort = g.sort && g.sort.c === c ? (g.sort.d > 0 ? { c, d: -1 } : null) : { c, d: 1 }; recompute(); renderHead(); renderBody(true); }
-    if (tl) { const c = +tl.dataset.c; g.sel = { r: 0, c, r2: g.view.length - 1, c2: c }; paintSel(); box.focus({ preventScroll: true }); }
+    if (tl) { const c = +tl.dataset.c; if (e.shiftKey) { g.sel.c2 = c; g.sel.r = 0; g.sel.r2 = Math.max(0, g.view.length - 1); } else g.sel = { r: 0, c, r2: Math.max(0, g.view.length - 1), c2: c }; paintSel(); box.focus({ preventScroll: true }); }
   });
   let fT;
   thead.addEventListener('input', e => { const i = e.target.dataset.f; if (i == null) return; g.filters[i] = e.target.value; clearTimeout(fT); fT = setTimeout(() => { recompute(); box.scrollTop = 0; renderBody(true); }, 180); });
