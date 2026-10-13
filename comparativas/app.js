@@ -519,10 +519,30 @@ function vPlanilla(tab) {
     reindex(); location.hash = '#planilla/' + encodeURIComponent(nueva); toast('Hoja renombrada');
   });
   const eliminar = async h => {
-    const n = S.cots.filter(c => hojaDe(c) === h).length;
-    if (n) return toast(`La hoja ${h} tiene ${n} cotización(es). Movelas a otra hoja (cambiando "Hoja (mes)" en cada cotización) antes de eliminarla.`, 6000);
-    if (!confirm(`¿Eliminar la hoja ${h}?`)) return;
-    await guardarHojas(hojasGuardadas().filter(x => x !== h)); location.hash = '#planilla'; toast('Hoja eliminada');
+    const cs = S.cots.filter(c => hojaDe(c) === h);
+    if (!cs.length) {
+      if (!confirm(`¿Eliminar la hoja ${h}?`)) return;
+      await guardarHojas(hojasGuardadas().filter(x => x !== h)); location.hash = '#planilla'; toast('Hoja eliminada'); return;
+    }
+    const nIt = cs.reduce((n, c) => n + (I.itemsByCot.get(c.id) || []).length, 0);
+    const otras = lista.filter(x => x !== h);
+    const o = modal(`<h2>Eliminar hoja ${esc(h)}</h2>
+      <p>La hoja tiene <b>${cs.length}</b> cotización(es) con <b>${nIt}</b> renglones: ${cs.map(c => esc(c.proceso)).join(', ')}.</p>
+      <label class="row" style="margin:12px 0 6px"><input type="radio" name="dh" value="mover" checked> Mover las cotizaciones a la hoja
+        <select class="in" id="dest" style="margin-left:6px">${otras.map(x => `<option>${esc(x)}</option>`).join('')}</select></label>
+      <label class="row"><input type="radio" name="dh" value="borrar"> <span class="bad">Borrar también las cotizaciones y sus renglones</span> (no se puede deshacer)</label>
+      <div class="row" style="margin-top:16px"><span class="spacer"></span><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Eliminar hoja</button></div>`);
+    if (!otras.length) { $('input[value=borrar]', o).checked = true; $('#dest', o).disabled = true; }
+    $('#ok', o).onclick = async () => {
+      const modo = $('input[name=dh]:checked', o).value;
+      const ids = cs.map(c => c.id);
+      if (modo === 'mover') { const d = $('#dest', o).value; await db.updIn('cc_cotizaciones', 'id', ids, { hoja: d }); }
+      else { if (!confirm(`Se van a borrar ${cs.length} cotización(es) y ${nIt} renglones. ¿Seguro?`)) return; await db.del('cc_items', 'cotizacion_id', ids); await db.del('cc_cotizaciones', 'id', ids); }
+      await guardarHojas(hojasGuardadas().filter(x => x !== h));
+      o.remove(); await loadAll();
+      location.hash = '#planilla' + (modo === 'mover' ? '/' + encodeURIComponent($('#dest', o).value) : '');
+      toast(modo === 'mover' ? 'Cotizaciones movidas y hoja eliminada' : 'Hoja y cotizaciones eliminadas');
+    };
   };
   $$('[data-hoja]').forEach(a => {
     a.ondblclick = e => { e.preventDefault(); renombrar(a.dataset.hoja); };
@@ -576,7 +596,7 @@ function vCot(id) {
   $('#actCost').onclick = () => actualizarCostos(c);
   $('#impActa').onclick = () => pickFile('.pdf,.xlsx,.xls', f => importarActa(f, c.id));
   $('#xls').onclick = () => exportGrilla(g, c.proceso);
-  $('#delCot').onclick = async () => { if (!confirm(`¿Eliminar ${c.proceso} con sus ${its.length} renglones? Las comparativas quedan, pero desvinculadas.`)) return; await db.del('cc_cotizaciones', 'id', [c.id]); await loadAll(); location.hash = '#cotizaciones'; };
+  $('#delCot').onclick = async () => { if (!confirm(`¿Eliminar ${c.proceso} con sus ${its.length} renglones? Las comparativas quedan, pero desvinculadas.`)) return; await db.del('cc_items', 'cotizacion_id', [c.id]); await db.del('cc_cotizaciones', 'id', [c.id]); await loadAll(); location.hash = '#cotizaciones'; };
 }
 function filaHist(x, it) {
   const a = x.a, m = a.mejorComp;
