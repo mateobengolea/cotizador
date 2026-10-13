@@ -437,6 +437,20 @@ function montarGrilla(host, rowsFn, { id, sin = [], procDef, hoja, sinNuevas }) 
     onUndo: async () => { await deshacer(); grid.setRows(rowsFn()); },
     ghostText: c => c.key === 'proceso' ? (procDef() || '') : c.key === 'detalle' ? 'escribí acá para agregar…' : '',
     menu: (rows, row) => menuFilas(rows.map(r => r._base || r), row._base || row),
+    fmtOf: (r, c) => { const f = (r._base || r).fmt; return f && f[c.key] || null; },
+    onFormat: async cells => {
+      const por = new Map();
+      for (const x of cells) { const it = x.row._base || x.row; if (!por.has(it)) por.set(it, []); por.get(it).push(x); }
+      const undo = [];
+      for (const [it, xs] of por) {
+        const f = { ...(it.fmt || {}) };
+        for (const x of xs) { if (Object.keys(x.fmt).length) f[x.col.key] = x.fmt; else delete f[x.col.key]; }
+        undo.push({ t: 'item', id: it.id, before: { fmt: it.fmt || null } });
+        try { Object.assign(it, await db.upd('cc_items', it.id, { fmt: Object.keys(f).length ? f : null })); }
+        catch (e) { if (/fmt/.test(e.message)) { toast('Para guardar formatos, corré de nuevo schema.sql en Supabase.', 7000); return; } throw e; }
+      }
+      UNDO.push(undo);
+    },
     rowClass: r => fs.has(r.id) ? 'grp' : '',
   });
   grid.setRows(rowsFn()); fs = firsts(); grid.setRows(rowsFn());
@@ -496,7 +510,7 @@ function vPlanilla(tab) {
     ${vacia ? `<div class="card" style="padding:10px 14px;margin-bottom:8px">Hoja vacía. Escribí en la fila <b>＋</b> empezando por la columna <b>Proceso</b> (ej. EXPTE 252000): se crea la cotización en esta hoja y después cargás los renglones debajo.</div>` : ''}
     <div id="gh"></div>
     <div class="xltabs"><a href="#" id="addHoja" title="Nueva hoja" style="font-weight:700">＋</a>${lista.map(h => t(h, h, true)).join('')}<span class="sep"></span>${t('TODAS', 'Todas')}${t('ADJ', 'Adjudicados')}${ocs.length ? '<span class="sep"></span>' + ocs.slice(0, 30).map(o => t('OC ' + o, 'OC ' + o)).join('') : ''}</div>${AYUDA}`, { full: true });
-  const host = $('#gh'); host.style.height = `calc(100vh - ${vacia ? 235 : tab.startsWith('OC ') && I.oc.get(tab.slice(3)) ? 225 : 175}px)`;
+  const host = $('#gh'); host.style.height = `calc(100vh - ${vacia ? 265 : tab.startsWith('OC ') && I.oc.get(tab.slice(3)) ? 255 : 205}px)`;
   const procDef = () => { const g = host._grid; const v = g ? g.view : []; const last = v[v.length - 1]; return last ? (I.cot.get(last.cotizacion_id) || {}).proceso : ''; };
   const g = montarGrilla(host, rowsFn, { id: 'plan', procDef, hoja: ESPECIALES(tab) ? null : tab, sinNuevas: tab.startsWith('OC ') || tab === 'ADJ' });
   $('#nc').onclick = nuevaCot;

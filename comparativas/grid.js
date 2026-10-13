@@ -16,7 +16,22 @@ function Grid(host, opt) {
   const ghost = !!opt.onNewRow;
 
   host.classList.add('xlwrap');
-  host.innerHTML = `<div class="xlbar"><span class="xlref"></span><span class="xlfx">fx</span><input class="xlfbox" spellcheck="false"></div>
+  const PAL = ['#FFFFFF', '#000000', '#E7E6E6', '#44546A', '#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47',
+    '#F2F2F2', '#7F7F7F', '#D0CECE', '#D6DCE4', '#D9E1F2', '#FCE4D6', '#EDEDED', '#FFF2CC', '#DDEBF7', '#E2EFDA',
+    '#C00000', '#FF0000', '#FFC000', '#FFFF00', '#92D050', '#00B050', '#00B0F0', '#0070C0', '#002060', '#7030A0'];
+  const tools = opt.onFormat ? `<div class="xltools">
+      <button data-t="b" title="Negrita (Ctrl+N / Ctrl+B)"><b>N</b></button><button data-t="i" title="Cursiva (Ctrl+K / Ctrl+I)"><i>K</i></button><button data-t="u" title="Subrayado (Ctrl+S / Ctrl+U)"><u>S</u></button>
+      <span class="xlsep"></span>
+      <span class="xlsplit"><button data-t="bgLast" title="Color de relleno"><span class="ico">🪣</span><i class="sw" data-sw="bg" style="background:#FFFF00"></i></button><button data-t="bgMenu" class="dd" title="Elegir color de relleno">▾</button></span>
+      <span class="xlsplit"><button data-t="cLast" title="Color de fuente"><b class="ico">A</b><i class="sw" data-sw="c" style="background:#FF0000"></i></button><button data-t="cMenu" class="dd" title="Elegir color de fuente">▾</button></span>
+      <span class="xlsep"></span>
+      <span class="xlsplit"><button data-t="bdLast" title="Bordes">▦<i class="sw" style="background:#222"></i></button><button data-t="bdMenu" class="dd" title="Elegir bordes">▾</button></span>
+      <span class="xlsep"></span>
+      <button data-t="al:left" title="Alinear a la izquierda">⯇≡</button><button data-t="al:center" title="Centrar">≡</button><button data-t="al:right" title="Alinear a la derecha">≡⯈</button>
+      <span class="xlsep"></span>
+      <button data-t="paint" title="Copiar formato: tocá, después seleccioná las celdas destino">🖌</button><button data-t="clear" title="Borrar formato">⌫ Formato</button>
+    </div>` : '';
+  host.innerHTML = tools + `<div class="xlbar"><span class="xlref"></span><span class="xlfx">fx</span><input class="xlfbox" spellcheck="false"></div>
     <div class="xl" tabindex="0"><table class="xlt"><colgroup></colgroup><thead></thead><tbody></tbody></table><input class="xled" spellcheck="false"></div>
     <div class="xlstatus"><span class="xlcount"></span><span class="xlsum"></span></div>`;
   const $ = s => host.querySelector(s);
@@ -43,7 +58,20 @@ function Grid(host, opt) {
     let txt = row ? (c.fmt ? c.fmt(v, row) : (v ?? '')) : '';
     if (!row && ghost && opt.ghostText) txt = opt.ghostText(c) || '';
     const cls = ['xc', c.type === 'text' ? '' : 'num', c.edit ? '' : 'calc', c.live ? 'live' : '', row && c.cls ? c.cls(v, row) || '' : '', ci === nf - 1 ? 'xlfz' : '', !row ? 'ghost' : ''].join(' ');
-    const st = ci < nf ? ` style="position:sticky;left:${L[ci + 1] - c.w}px;z-index:2"` : '';
+    let css = ci < nf ? `position:sticky;left:${L[ci + 1] - c.w}px;z-index:2;` : '';
+    const f = row && opt.fmtOf ? opt.fmtOf(row, c) : null;
+    if (f) {
+      if (f.bg) css += `background:${f.bg};`;
+      if (f.c) css += `color:${f.c};`;
+      if (f.b) css += 'font-weight:700;';
+      if (f.i) css += 'font-style:italic;';
+      if (f.u) css += 'text-decoration:underline;';
+      if (f.al) css += `text-align:${f.al};`;
+      const sh = []; const bd = f.bd || {};
+      if (bd.t) sh.push('inset 0 1.5px 0 #222'); if (bd.b) sh.push('inset 0 -1.5px 0 #222'); if (bd.l) sh.push('inset 1.5px 0 0 #222'); if (bd.r) sh.push('inset -1.5px 0 0 #222');
+      if (sh.length) css += `box-shadow:${sh.join(',')};`;
+    }
+    const st = css ? ` style="${css}"` : '';
     return `<td data-r="${ri}" data-c="${ci}" class="${cls}"${st}${c.titleOf && row ? ` title="${esc(c.titleOf(v, row))}"` : ''}>${txt}</td>`;
   }
   let lastFirst = -1;
@@ -210,6 +238,7 @@ function Grid(host, opt) {
       for (let r = n.r0; r <= n.r1 && r < g.view.length; r++) for (let c = n.c0; c <= n.c1; c++) if (cols[c].edit) ch.push({ r, c, value: '' });
       if (ch.length) apply(ch); return;
     }
+    if ((e.ctrlKey || e.metaKey) && opt.onFormat && ['b', 'n', 'i', 'k', 'u', 's'].includes(k.toLowerCase())) { e.preventDefault(); toggle({ b: 'b', n: 'b', i: 'i', k: 'i', u: 'u', s: 'u' }[k.toLowerCase()]); return; }
     if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'z') { e.preventDefault(); opt.onUndo && opt.onUndo().then(() => g.refresh()); return; }
     if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'a') { e.preventDefault(); g.sel = { r: 0, c: 0, r2: g.view.length - 1, c2: cols.length - 1 }; paintSel(); return; }
     if ((e.ctrlKey || e.metaKey) && k === '-') { e.preventDefault(); delRows(); return; }
@@ -257,6 +286,64 @@ function Grid(host, opt) {
     m.onclick = async ev => { const d = ev.target.closest('[data-i]'); if (!d) return; close(); await items[+d.dataset.i].run(); g.refresh(); };
   });
   const selRows = () => { const n = norm(); const out = []; for (let r = n.r0; r <= n.r1; r++) if (g.view[r]) out.push(g.view[r]); return out; };
+  // ---------- formato de celdas ----------
+  let last = { bg: '#FFFF00', c: '#FF0000', bd: 'all' }, painter = null;
+  const selCells = () => { const n = norm(); const out = []; for (let r = n.r0; r <= n.r1; r++) { const row = g.view[r]; if (!row) continue; for (let c = n.c0; c <= n.c1; c++) out.push({ r, c, row, col: cols[c], fmt: { ...(opt.fmtOf(row, cols[c]) || {}), bd: { ...((opt.fmtOf(row, cols[c]) || {}).bd || {}) } } }); } return out; };
+  async function formatear(fn) {
+    if (!opt.onFormat) return;
+    const n = norm(); const cs = selCells(); if (!cs.length) return;
+    cs.forEach(x => fn(x, n));
+    cs.forEach(x => { const f = x.fmt; if (f.bd && !f.bd.t && !f.bd.b && !f.bd.l && !f.bd.r) delete f.bd; for (const k of Object.keys(f)) if (f[k] == null || f[k] === false || f[k] === '') delete f[k]; });
+    try { await opt.onFormat(cs.map(x => ({ row: x.row, col: x.col, fmt: x.fmt }))); } catch (e) { flash('Error: ' + e.message); }
+    renderBody(true);
+  }
+  const toggle = k => { const cs = selCells(); const all = cs.length && cs.every(x => x.fmt[k]); formatear(x => { x.fmt[k] = all ? null : 1; }); };
+  function bordes(tipo) {
+    last.bd = tipo;
+    formatear((x, n) => {
+      const b = x.fmt.bd || (x.fmt.bd = {});
+      if (tipo === 'none') { x.fmt.bd = {}; return; }
+      if (tipo === 'all') { b.t = b.b = b.l = b.r = 1; return; }
+      if (tipo === 'out') { if (x.r === n.r0) b.t = 1; if (x.r === n.r1) b.b = 1; if (x.c === n.c0) b.l = 1; if (x.c === n.c1) b.r = 1; return; }
+      if (tipo === 'bottom' && x.r === n.r1) b.b = 1;
+      if (tipo === 'top' && x.r === n.r0) b.t = 1;
+      if (tipo === 'left' && x.c === n.c0) b.l = 1;
+      if (tipo === 'right' && x.c === n.c1) b.r = 1;
+    });
+  }
+  function popup(anchor, html, onPick) {
+    document.querySelectorAll('.xlpop').forEach(p => p.remove());
+    const p = document.createElement('div'); p.className = 'xlpop'; p.innerHTML = html;
+    const r = anchor.getBoundingClientRect(); p.style.left = r.left + 'px'; p.style.top = (r.bottom + 2) + 'px';
+    document.body.appendChild(p);
+    const close = () => { p.remove(); document.removeEventListener('mousedown', out, true); };
+    const out = ev => { if (!p.contains(ev.target)) close(); };
+    setTimeout(() => document.addEventListener('mousedown', out, true));
+    p.addEventListener('click', ev => { const d = ev.target.closest('[data-v]'); if (d) { close(); onPick(d.dataset.v); } });
+    const inp = p.querySelector('input[type=color]'); if (inp) inp.addEventListener('change', () => { close(); onPick(inp.value.toUpperCase()); });
+  }
+  const paleta = (titulo, nada) => `<div class="xlpt">${titulo}</div><div class="xlpal">${PAL.map(c => `<i data-v="${c}" style="background:${c}" title="${c}"></i>`).join('')}</div>
+    <div class="xlpo" data-v="">${nada}</div><label class="xlpo">Más colores… <input type="color" value="#FFFF00"></label>`;
+  const BORD = [['bottom', 'Borde inferior'], ['top', 'Borde superior'], ['left', 'Borde izquierdo'], ['right', 'Borde derecho'], ['all', 'Todos los bordes'], ['out', 'Bordes externos'], ['none', 'Sin borde']];
+  const tbar = host.querySelector('.xltools');
+  const setSw = () => { if (!tbar) return; tbar.querySelector('[data-sw="bg"]').style.background = last.bg || 'transparent'; tbar.querySelector('[data-sw="c"]').style.background = last.c || '#000'; };
+  if (tbar) tbar.addEventListener('mousedown', e => e.preventDefault());
+  if (tbar) tbar.addEventListener('click', e => {
+    const b = e.target.closest('[data-t]'); if (!b) return; const t = b.dataset.t;
+    if (t === 'b' || t === 'i' || t === 'u') toggle(t);
+    else if (t === 'bgLast') formatear(x => { x.fmt.bg = last.bg || null; });
+    else if (t === 'cLast') formatear(x => { x.fmt.c = last.c || null; });
+    else if (t === 'bgMenu') popup(b, paleta('Color de relleno', 'Sin relleno'), v => { last.bg = v; setSw(); formatear(x => { x.fmt.bg = v || null; }); });
+    else if (t === 'cMenu') popup(b, paleta('Color de fuente', 'Automático'), v => { last.c = v; setSw(); formatear(x => { x.fmt.c = v || null; }); });
+    else if (t === 'bdLast') bordes(last.bd);
+    else if (t === 'bdMenu') popup(b, BORD.map(([k, l]) => `<div class="xlpo" data-v="${k}">${l}</div>`).join(''), v => bordes(v));
+    else if (t.startsWith('al:')) { const a = t.slice(3); const cs = selCells(); const all = cs.every(x => x.fmt.al === a); formatear(x => { x.fmt.al = all ? null : a; }); }
+    else if (t === 'clear') formatear(x => { x.fmt = {}; });
+    else if (t === 'paint') { const row = g.view[g.sel.r]; painter = row ? { ...(opt.fmtOf(row, cols[g.sel.c]) || {}) } : {}; box.classList.add('painting'); b.classList.add('on'); flash('Seleccioná las celdas donde copiar el formato'); }
+    box.focus({ preventScroll: true });
+  });
+  tbody.addEventListener('mouseup', () => { if (painter && drag) { const f = painter; painter = null; box.classList.remove('painting'); tbar && tbar.querySelector('[data-t="paint"]').classList.remove('on'); setTimeout(() => formatear(x => { x.fmt = JSON.parse(JSON.stringify(f)); }), 0); } });
+
   async function delRows() { if (opt.onDelete) { const rows = selRows(); if (rows.length && await opt.onDelete(rows)) g.refresh(); } }
 
   // copiar / pegar (compatible con Excel: tabulaciones y saltos de línea)

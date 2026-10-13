@@ -146,6 +146,26 @@ table.t input.cell:hover{border-color:var(--line)} table.t input.cell:focus{bord
 .xlhelp{font-size:12px;color:var(--muted);margin-top:6px}
 .xlhelp kbd{background:var(--panel);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:11px}
 main.full{max-width:none;padding:12px 14px}
+
+.xltools{display:flex;align-items:center;gap:2px;padding:3px 6px;background:#f8f8f8;border-bottom:1px solid #d4d4d4;flex-wrap:wrap}
+.xltools button{border:1px solid transparent;background:transparent;border-radius:4px;height:26px;min-width:28px;padding:0 6px;cursor:pointer;font:13px Calibri,"Segoe UI",sans-serif;color:#222;position:relative}
+.xltools button:hover{background:#e6e6e6;border-color:#d0d0d0}
+.xltools button.on{background:#d3f0e0;border-color:#217346}
+.xltools .xlsep{width:1px;height:20px;background:#d0d0d0;margin:0 5px}
+.xltools .xlsplit{display:inline-flex}
+.xltools .xlsplit button:first-child{border-top-right-radius:0;border-bottom-right-radius:0;padding-bottom:5px}
+.xltools .xlsplit .dd{min-width:16px;padding:0 3px;font-size:10px;border-top-left-radius:0;border-bottom-left-radius:0}
+.xltools .sw{position:absolute;left:5px;right:5px;bottom:3px;height:4px;border-radius:1px;border:1px solid rgba(0,0,0,.15)}
+.xltools .ico{font-size:13px}
+.xlpop{position:fixed;z-index:80;background:#fff;border:1px solid #c8c8c8;box-shadow:0 6px 18px rgba(0,0,0,.18);padding:6px;min-width:200px;font:13px Calibri,"Segoe UI",sans-serif;color:#222}
+.xlpt{font-size:12px;color:#666;padding:2px 4px 6px}
+.xlpal{display:grid;grid-template-columns:repeat(10,18px);gap:3px;padding:0 4px 6px}
+.xlpal i{width:18px;height:18px;border:1px solid #ccc;cursor:pointer;display:block}
+.xlpal i:hover{outline:2px solid #217346;outline-offset:0}
+.xlpo{display:flex;align-items:center;gap:6px;padding:5px 8px;cursor:pointer}
+.xlpo:hover{background:#e8f3ec}
+.xlpo input[type=color]{width:28px;height:20px;border:0;padding:0;background:none}
+.xl.painting td{cursor:copy}
 @media (max-width:700px){main{padding:12px} header.top{padding:0 10px;gap:8px} header.top .logo span{display:none}}
 </style>
 </head>

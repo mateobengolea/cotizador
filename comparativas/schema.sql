@@ -61,6 +61,7 @@ create index if not exists cc_items_mono_idx   on cc_items(monodroga);
 alter table cc_items add column if not exists cod_cliente  text;   -- código del cliente en el pedido (ej. MED1092)
 alter table cc_items add column if not exists desc_cliente text;   -- descripción del renglón en el pedido
 create index if not exists cc_items_codcli_idx on cc_items(cod_cliente);
+alter table cc_items add column if not exists fmt jsonb;           -- formato de celdas (negrita, colores, bordes…) por columna
 
 -- ---------- Costos vigentes (se reemplazan con cada carga) ----------
 create table if not exists cc_costos (
