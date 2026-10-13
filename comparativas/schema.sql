@@ -125,6 +125,35 @@ create table if not exists cc_comp_ofertas (
 );
 create index if not exists cc_ofer_ren_idx on cc_comp_ofertas(renglon_id);
 
+-- ---------- Órdenes de compra / provisión ----------
+create table if not exists cc_ocs (
+  id            bigint generated always as identity primary key,
+  numero        text not null unique,    -- ej. "11046"
+  serie         text,                    -- ej. "172"
+  fecha         date,
+  proceso       text,
+  cotizacion_id bigint references cc_cotizaciones(id) on delete set null,
+  condicion     text,
+  vence         date,
+  total         numeric,
+  plan          text,
+  archivo       text,
+  created_at    timestamptz not null default now(),
+  created_by    text
+);
+create table if not exists cc_oc_items (
+  id          bigint generated always as identity primary key,
+  oc_id       bigint not null references cc_ocs(id) on delete cascade,
+  item_id     bigint references cc_items(id) on delete set null,   -- renglón cotizado que se adjudicó
+  cod_cliente text,
+  descripcion text,
+  cantidad    numeric,
+  precio      numeric,
+  importe     numeric
+);
+create index if not exists cc_oci_oc_idx on cc_oc_items(oc_id);
+create index if not exists cc_oci_item_idx on cc_oc_items(item_id);
+
 -- ---------- Configuración compartida ----------
 create table if not exists cc_config (
   clave text primary key,
@@ -144,7 +173,8 @@ do $$
 declare t text;
 begin
   foreach t in array array['cc_cotizaciones','cc_items','cc_costos','cc_cargas_costos',
-                           'cc_comparativas','cc_comp_renglones','cc_comp_ofertas','cc_config']
+                           'cc_comparativas','cc_comp_renglones','cc_comp_ofertas','cc_config',
+                           'cc_ocs','cc_oc_items']
   loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_auth', t);

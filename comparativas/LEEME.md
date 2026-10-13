@@ -57,7 +57,7 @@ En el repo `mateobengolea/cotizador` creá una carpeta `comparativas/` y subí t
 
 ## Importar un pedido de cotización (PDF de Bionexo)
 
-En **Planilla** o **Cotizaciones**, tocá **Importar pedido (PDF)**. También podés arrastrar el PDF sobre la planilla.
+En **Planilla** o **Cotizaciones**, tocá **Importar PDF**. También podés arrastrar el PDF sobre la planilla.
 
 1. Se leen solos el expediente (por ejemplo, E247546 → EXPTE 247546), la apertura, la condición de pago, el mantenimiento de oferta y todos los renglones con código del cliente (MED…), cantidad, unidad y marcas.
 2. Para cada renglón la web propone el producto, en este orden:
@@ -68,6 +68,20 @@ En **Planilla** o **Cotizaciones**, tocá **Importar pedido (PDF)**. También po
 4. **Crear cotización** arma la hoja con el costo de hoy y el último margen usado para cada producto, o el margen objetivo.
 
 Lo que elegís queda aprendido: el pedido del mes siguiente reconoce los mismos códigos MED y propone los mismos productos.
+
+## Cargar una orden de compra (PDF del ISSN)
+
+Con **Importar PDF** (o arrastrando el PDF a la planilla) se detecta solo si es pedido, acta u OC.
+
+1. Se leen el número de OC (ej. 172 - 11046), la fecha, el expediente, la condición, el vencimiento, el total y cada renglón (código MED, cantidad, precio e importe).
+2. Se busca la cotización del expediente y se empareja cada renglón con el nuestro, por código MED, precio y producto. El control muestra **precio OK** o la diferencia contra lo cotizado.
+3. **Cargar OC**:
+   - Marca esos renglones como adjudicados (Adj. = Sí, OC = 11046).
+   - Opcionalmente marca el resto como No adjudicados.
+   - Pone la cotización como *adjudicada* o *parcial*.
+   - Crea la pestaña **OC 11046** con los renglones y las cantidades de la orden, como las hojas OC del Excel.
+
+Si en la pestaña de una OC cambiás la CANT. ENV, se cambia la cantidad de la orden, no la cotizada. Para borrar una orden entera, usá el botón **Eliminar OC** de su pestaña.
 
 ## La Planilla (vista tipo Excel)
 

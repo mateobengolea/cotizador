@@ -19,7 +19,7 @@ const esPropio = name => P.canonProv(name) === canonPropio;
 // ======================================================================
 //  Capa de datos: Supabase o modo demo (memoria + localStorage)
 // ======================================================================
-const TABLES = ['cc_cotizaciones', 'cc_items', 'cc_costos', 'cc_cargas_costos', 'cc_comparativas', 'cc_comp_renglones', 'cc_comp_ofertas', 'cc_config'];
+const TABLES = ['cc_cotizaciones', 'cc_items', 'cc_costos', 'cc_cargas_costos', 'cc_comparativas', 'cc_comp_renglones', 'cc_comp_ofertas', 'cc_config', 'cc_ocs', 'cc_oc_items'];
 let sb = null;
 const db = DEMO ? (() => {
   const mem = {}; let seq = Date.now() % 100000;
@@ -51,14 +51,15 @@ const db = DEMO ? (() => {
 // ======================================================================
 //  Estado e índices
 // ======================================================================
-const S = { user: null, loaded: false, cots: [], items: [], costos: [], cargas: [], comps: [], rens: [], ofs: [], cfg: {} };
+const S = { user: null, loaded: false, cots: [], items: [], costos: [], cargas: [], comps: [], rens: [], ofs: [], cfg: {}, ocs: [], ocItems: [] };
 const I = {};
 const CFG_DEF = { margenObjetivo: 0.04, cercania: 0.03 };
 const conf = k => (S.cfg[k] ?? CFG_DEF[k]);
 
 async function loadAll() {
-  const [cots, items, costos, cargas, comps, rens, ofs, cfg] = await Promise.all(TABLES.map(t => db.all(t)));
-  Object.assign(S, { cots, items, costos, cargas, comps, rens, ofs, loaded: true });
+  const opcional = new Set(['cc_ocs', 'cc_oc_items']);   // tablas nuevas: si todavía no se corrió schema.sql, la app igual arranca
+  const [cots, items, costos, cargas, comps, rens, ofs, cfg, ocs, ocItems] = await Promise.all(TABLES.map(t => opcional.has(t) ? db.all(t).catch(() => { S.faltaSchema = true; return []; }) : db.all(t)));
+  Object.assign(S, { cots, items, costos, cargas, comps, rens, ofs, ocs, ocItems, loaded: true });
   S.cfg = Object.fromEntries(cfg.map(r => [r.clave, r.valor]));
   reindex();
 }
@@ -68,6 +69,9 @@ function reindex() {
   I.item = new Map(S.items.map(i => [i.id, i]));
   I.itemsByCot = by(S.items, 'cotizacion_id');
   for (const a of I.itemsByCot.values()) a.sort((x, y) => (x.orden ?? 1e9) - (y.orden ?? 1e9) || (x.renglon ?? 0) - (y.renglon ?? 0) || x.id - y.id);
+  I.oc = new Map(S.ocs.map(o => [String(o.numero), o]));
+  I.ocLines = by(S.ocItems, 'oc_id');
+  I.ocLinesByItem = by(S.ocItems.filter(l => l.item_id), 'item_id');
   I.comp = new Map(S.comps.map(c => [c.id, c]));
   I.compsByCot = by(S.comps.filter(c => c.cotizacion_id), 'cotizacion_id');
   I.rensByComp = by(S.rens, 'comparativa_id');
@@ -218,7 +222,7 @@ function vCots() {
     <input class="in" id="q" placeholder="Buscar expediente, producto, monodroga…" value="${esc(fCots.q)}" style="width:280px">
     <select class="in" id="mes"><option value="">Todos los meses</option>${meses.map(m => `<option value="${m}" ${m === fCots.mes ? 'selected' : ''}>${MES[+m.slice(5)]} ${m.slice(0, 4)}</option>`).join('')}</select>
     <select class="in" id="est"><option value="">Todos los estados</option>${ESTADOS.map(e => `<option ${e === fCots.estado ? 'selected' : ''}>${e}</option>`).join('')}</select>
-    <button class="btn pri" id="ped">Importar pedido (PDF)</button><button class="btn" id="nueva">+ Nueva cotización</button></div>
+    <button class="btn pri" id="ped" title="Pedido de cotización, acta comparativa u orden de compra: se detecta solo">Importar PDF</button><button class="btn" id="nueva">+ Nueva cotización</button></div>
     <div class="tw"><table class="t"><thead><tr><th>Proceso</th><th>Apertura</th><th class="n">Renglones</th><th class="n">Total cotizado</th><th class="n">Margen</th><th>Estado</th><th>OC</th><th>Comparativa</th><th class="n">1° lugar</th></tr></thead><tbody>
     ${list.map(c => { const r = resumenCot(c); return `<tr class="click" data-go="#cot/${c.id}"><td><b>${esc(c.proceso)}</b>${c.obs ? `<div class="small muted">${esc(c.obs)}</div>` : ''}</td><td>${esc(c.apertura || fdate(c.fecha))}</td>
       <td class="n">${r.n}</td><td class="n">${money(r.total)}</td><td class="n">${pct(r.margen)}</td><td>${pillEstado(c.estado)}</td><td>${esc(c.oc || '')}</td>
@@ -228,7 +232,7 @@ function vCots() {
   const upd = () => { fCots.q = $('#q').value; fCots.mes = $('#mes').value; fCots.estado = $('#est').value; const p = $('#q').selectionStart; vCots(); $('#q').focus(); $('#q').setSelectionRange(p, p); };
   $('#q').oninput = upd; $('#mes').onchange = upd; $('#est').onchange = upd;
   $('#nueva').onclick = nuevaCot;
-  $('#ped').onclick = () => pickFile('.pdf', importarPedido);
+  $('#ped').onclick = () => pickFile('.pdf', importarPDF);
   $$('tr[data-go]').forEach(tr => tr.onclick = () => location.hash = tr.dataset.go);
 }
 function nuevaCot() {
@@ -415,19 +419,24 @@ function ordenPlanilla(a, b) {
   const ca = I.cot.get(a.cotizacion_id) || {}, cb = I.cot.get(b.cotizacion_id) || {};
   return String(ca.fecha || '').localeCompare(String(cb.fecha || '')) || (ca.id - cb.id) || ((a.orden ?? 1e9) - (b.orden ?? 1e9)) || ((a.renglon ?? 0) - (b.renglon ?? 0)) || a.id - b.id;
 }
-function montarGrilla(host, rowsFn, { id, sin = [], procDef, hoja }) {
+function montarGrilla(host, rowsFn, { id, sin = [], procDef, hoja, sinNuevas }) {
   const cols = planCols(sin);
   let grid;
   const firsts = () => { const s = new Set(); let prev = null; for (const r of grid.view) { if (prev !== null && r.cotizacion_id !== prev) s.add(r.id); prev = r.cotizacion_id; } return s; };
   let fs = new Set();
   grid = Grid(host, {
     id, cols, frozen: Math.min(5, cols.findIndex(c => c.key === 'detalle') + 1),
-    onEdit: async ch => { await editarItems(ch); grid.setRows(rowsFn()); fs = firsts(); },
-    onNewRow: async cells => { await nuevaFila(cells, procDef, hoja); grid.setRows(rowsFn()); fs = firsts(); },
-    onDelete: async rows => { const ok = await borrarFilas(rows); if (ok) grid.setRows(rowsFn()); return ok; },
+    onEdit: async ch => {
+      const lin = ch.filter(c => c.row._line && c.col.key === 'cantidad');
+      for (const c of lin) { const v = P.num(c.value); Object.assign(c.row._line, await db.upd('cc_oc_items', c.row._line.id, { cantidad: v, importe: v != null && c.row._line.precio != null ? v * c.row._line.precio : null })); }
+      await editarItems(ch.filter(c => !lin.includes(c)).map(c => ({ ...c, row: c.row._base || c.row })));
+      reindex(); grid.setRows(rowsFn()); fs = firsts();
+    },
+    onNewRow: sinNuevas ? undefined : async cells => { await nuevaFila(cells, procDef, hoja); grid.setRows(rowsFn()); fs = firsts(); },
+    onDelete: async rows => { const ok = rows[0] && rows[0]._line ? await quitarDeOC(rows) : await borrarFilas(rows.map(r => r._base || r)); if (ok) grid.setRows(rowsFn()); return ok; },
     onUndo: async () => { await deshacer(); grid.setRows(rowsFn()); },
     ghostText: c => c.key === 'proceso' ? (procDef() || '') : c.key === 'detalle' ? 'escribí acá para agregar…' : '',
-    menu: menuFilas,
+    menu: (rows, row) => menuFilas(rows.map(r => r._base || r), row._base || row),
     rowClass: r => fs.has(r.id) ? 'grp' : '',
   });
   grid.setRows(rowsFn()); fs = firsts(); grid.setRows(rowsFn());
@@ -469,30 +478,32 @@ function vPlanilla(tab) {
   for (const c of S.cots) { const h = hojaDe(c); if (!hojas.get(h) || String(c.fecha || '') > hojas.get(h)) hojas.set(h, String(c.fecha || '')); }
   const clave = h => { const m = h.match(/^([A-Z]+) (\d{4})$/); const i = m ? MESES_N.indexOf(m[1]) : -1; return i >= 0 ? `${m[2]}-${String(i + 1).padStart(2, '0')}-99` : (hojas.get(h) || '9999'); };
   const lista = [...hojas.keys()].sort((a, b) => clave(b).localeCompare(clave(a)));
-  const ocs = [...new Set(S.items.map(i => i.oc).filter(Boolean))].sort((a, b) => (+b || 0) - (+a || 0));
+  const ocs = [...new Set([...S.items.flatMap(i => ocsDe(i)), ...S.ocs.map(o => String(o.numero))])].sort((a, b) => (+b || 0) - (+a || 0));
   tab = tab || lista[0] || 'TODAS';
   const rowsFn = () => {
     let r;
     if (tab === 'TODAS') r = S.items;
     else if (tab === 'ADJ') r = S.items.filter(i => i.adjudicado);
-    else if (tab.startsWith('OC ')) r = S.items.filter(i => String(i.oc) === tab.slice(3));
+    else if (tab.startsWith('OC ')) r = filasOC(tab.slice(3));
     else r = S.items.filter(i => hojaDe(I.cot.get(i.cotizacion_id) || {}) === tab);
     return [...r].sort(ordenPlanilla);
   };
   const t = (k, l, hoja) => `<a href="#planilla/${encodeURIComponent(k)}" class="${k === tab ? 'on' : ''}" ${hoja ? `data-hoja="${esc(k)}" title="Doble click para renombrar · click derecho para más opciones"` : ''}>${esc(l)}</a>`;
   const vacia = !ESPECIALES(tab) && !rowsFn().length;
   shell(`<div class="xltop"><span class="ttl">Planilla</span><span class="sub">Hoja <b>${esc(tab === 'ADJ' ? 'Adjudicados' : tab === 'TODAS' ? 'Todas' : tab)}</b></span><span class="spacer"></span>
-    <button class="btn pri" id="ped">Importar pedido (PDF)</button><button class="btn" id="nc">+ Nueva cotización</button><button class="btn" id="xls">Exportar hoja a Excel</button></div>
+    <button class="btn pri" id="ped" title="Pedido de cotización, acta comparativa u orden de compra: se detecta solo">Importar PDF</button><button class="btn" id="nc">+ Nueva cotización</button><button class="btn" id="xls">Exportar hoja a Excel</button></div>
+    ${tab.startsWith('OC ') && I.oc.get(tab.slice(3)) ? (() => { const o = I.oc.get(tab.slice(3)); return `<div class="card" style="padding:8px 14px;margin-bottom:8px" class="small">Orden de provisión <b>${esc(o.serie ? o.serie + ' - ' : '')}${esc(o.numero)}</b> · ${fdate(o.fecha)} · ${esc(o.proceso || '')} ${esc(o.plan || '')} · Cond. ${esc(o.condicion || '—')} · vence ${fdate(o.vence)} · Total <b>${money(o.total)}</b> <button class="btn sm danger" id="delOC" style="margin-left:10px">Eliminar OC</button></div>`; })() : ''}
     ${vacia ? `<div class="card" style="padding:10px 14px;margin-bottom:8px">Hoja vacía. Escribí en la fila <b>＋</b> empezando por la columna <b>Proceso</b> (ej. EXPTE 252000): se crea la cotización en esta hoja y después cargás los renglones debajo.</div>` : ''}
     <div id="gh"></div>
     <div class="xltabs"><a href="#" id="addHoja" title="Nueva hoja" style="font-weight:700">＋</a>${lista.map(h => t(h, h, true)).join('')}<span class="sep"></span>${t('TODAS', 'Todas')}${t('ADJ', 'Adjudicados')}${ocs.length ? '<span class="sep"></span>' + ocs.slice(0, 30).map(o => t('OC ' + o, 'OC ' + o)).join('') : ''}</div>${AYUDA}`, { full: true });
-  const host = $('#gh'); host.style.height = `calc(100vh - ${vacia ? 235 : 175}px)`;
+  const host = $('#gh'); host.style.height = `calc(100vh - ${vacia ? 235 : tab.startsWith('OC ') && I.oc.get(tab.slice(3)) ? 225 : 175}px)`;
   const procDef = () => { const g = host._grid; const v = g ? g.view : []; const last = v[v.length - 1]; return last ? (I.cot.get(last.cotizacion_id) || {}).proceso : ''; };
-  const g = montarGrilla(host, rowsFn, { id: 'plan', procDef, hoja: ESPECIALES(tab) ? null : tab });
+  const g = montarGrilla(host, rowsFn, { id: 'plan', procDef, hoja: ESPECIALES(tab) ? null : tab, sinNuevas: tab.startsWith('OC ') || tab === 'ADJ' });
   $('#nc').onclick = nuevaCot;
-  $('#ped').onclick = () => pickFile('.pdf', importarPedido);
+  $('#ped').onclick = () => pickFile('.pdf', importarPDF);
   host.addEventListener('dragover', e => e.preventDefault());
-  host.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f && /\.pdf$/i.test(f.name)) { e.preventDefault(); importarPedido(f); } });
+  host.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f && /\.pdf$/i.test(f.name)) { e.preventDefault(); importarPDF(f); } });
+  if ($('#delOC')) $('#delOC').onclick = () => eliminarOC(I.oc.get(tab.slice(3)));
   $('#xls').onclick = () => exportGrilla(g, 'Planilla ' + (tab === 'ADJ' ? 'Adjudicados' : tab));
   // ---- hojas: agregar / renombrar / eliminar ----
   $('#addHoja').onclick = e => { e.preventDefault(); pedirNombre('Nueva hoja', siguienteHoja(lista), async v => {
@@ -670,7 +681,7 @@ function vComps() {
   ${list.map(c => { const rs = I.rensByComp.get(c.id) || []; const g = rs.filter(r => I.ana.get(r.id)?.posicion === 1 || I.ana.get(r.id)?.ganamos).length; const cot = I.cot.get(c.cotizacion_id);
     return `<tr class="click" data-go="#comp/${c.id}"><td>${fdate(c.fecha)}</td><td><b>${esc(c.titulo || c.proceso)}</b><div class="small muted">${esc(c.archivo || '')}</div></td><td>${cot ? esc(cot.proceso) : '<span class="pill warn">sin vincular</span>'}</td><td class="n">${rs.length}</td><td class="n">${rs.filter(r => r.item_id).length}</td><td class="n">${g}</td><td><span class="pill">${esc(c.origen || 'acta')}</span></td></tr>`; }).join('') || '<tr><td colspan="7" class="muted">Todavía no hay comparativas.</td></tr>'}
   </tbody></table></div>`);
-  dropZone($('#drop'), '.pdf,.xlsx,.xls', f => importarActa(f));
+  dropZone($('#drop'), '.pdf,.xlsx,.xls', f => /\.pdf$/i.test(f.name) ? importarPDF(f) : importarActa(f));
   $$('tr[data-go]').forEach(tr => tr.onclick = () => location.hash = tr.dataset.go);
 }
 // ======================================================================
@@ -790,6 +801,106 @@ async function importarPedido(file) {
       btn.disabled = false; btn.textContent = 'Crear cotización';
       toast(/cod_cliente|desc_cliente|hoja/.test(e.message) ? 'Falta actualizar la base: corré de nuevo schema.sql en Supabase (SQL Editor) y reintentá.' : 'Error: ' + e.message, 8000);
     }
+  };
+}
+
+// ======================================================================
+//  Órdenes de compra / provisión
+// ======================================================================
+const ocsDe = it => String(it.oc || '').split(/[\s,\/;]+/).filter(Boolean);
+const ocMerge = (txt, n) => { const a = String(txt || '').split(/[\s,\/;]+/).filter(Boolean); if (!a.includes(String(n))) a.push(String(n)); return a.join(', '); };
+const ocQuitar = (txt, n) => String(txt || '').split(/[\s,\/;]+/).filter(x => x && x !== String(n)).join(', ') || null;
+function filasOC(num) {
+  const o = I.oc.get(String(num));
+  if (!o) return S.items.filter(i => ocsDe(i).includes(String(num)));
+  return (I.ocLines.get(o.id) || []).map(l => { const it = I.item.get(l.item_id); return it ? { ...it, cantidad: l.cantidad, _base: it, _line: l } : null; }).filter(Boolean);
+}
+async function desadjudicar(items, numero) {
+  for (const it of items) {
+    const quedan = (I.ocLinesByItem.get(it.id) || []).filter(l => { const o = S.ocs.find(x => x.id === l.oc_id); return o && String(o.numero) !== String(numero); });
+    Object.assign(it, await db.upd('cc_items', it.id, { oc: ocQuitar(it.oc, numero), adjudicado: quedan.length ? true : null }));
+  }
+}
+async function quitarDeOC(rows) {
+  if (!confirm(`¿Quitar ${rows.length} renglón(es) de esta orden de compra? (no se borran de la cotización)`)) return false;
+  const o = S.ocs.find(x => x.id === rows[0]._line.oc_id);
+  await db.del('cc_oc_items', 'id', rows.map(r => r._line.id));
+  S.ocItems = S.ocItems.filter(l => !rows.some(r => r._line.id === l.id)); reindex();
+  await desadjudicar(rows.map(r => r._base), o ? o.numero : '');
+  reindex(); toast('Quitado de la OC'); return true;
+}
+async function eliminarOC(o) {
+  if (!o || !confirm(`¿Eliminar la OC ${o.numero}? Los renglones quedan en la cotización pero sin adjudicar por esta OC.`)) return;
+  const its = (I.ocLines.get(o.id) || []).map(l => I.item.get(l.item_id)).filter(Boolean);
+  await db.del('cc_oc_items', 'oc_id', [o.id]); S.ocItems = S.ocItems.filter(l => l.oc_id !== o.id); reindex();
+  await desadjudicar(its, o.numero);
+  await db.del('cc_ocs', 'id', [o.id]);
+  await loadAll(); location.hash = '#planilla'; toast(`OC ${o.numero} eliminada`);
+}
+async function importarPDF(file) {
+  let t = '';
+  try { const pj = await pdfjsLib(); const d = await pj.getDocument({ data: new Uint8Array(await file.arrayBuffer()), verbosity: 0 }).promise; t = (await (await d.getPage(1)).getTextContent()).items.map(i => i.str).join(' '); }
+  catch (e) { return toast('No pude leer el PDF: ' + e.message, 6000); }
+  if (/Orden de (Provisi[oó]n|Compra)/i.test(t)) return importarOC(file);
+  if (/Pedido de Cotizaci/i.test(t) && /Marcas preferidas|Código:/i.test(t)) return importarPedido(file);
+  return importarActa(file);
+}
+async function importarOC(file) {
+  if (S.faltaSchema) return toast('Falta actualizar la base: corré de nuevo schema.sql en Supabase (SQL Editor) y recargá la página.', 8000);
+  toast('Leyendo la orden de compra…');
+  let oc;
+  try { oc = await P.parseOCPDF(await pdfjsLib(), new Uint8Array(await file.arrayBuffer())); } catch (e) { return toast(e.message, 6000); }
+  if (oc.numero && I.oc.get(String(oc.numero))) {
+    const m = modal(`<h2>OC ${esc(oc.numero)} ya cargada</h2><p>Esta orden de compra ya está en la web.</p><div class="row" style="margin-top:12px"><span class="spacer"></span><button class="btn" data-close>Cerrar</button><a class="btn pri" href="#planilla/${encodeURIComponent('OC ' + oc.numero)}" data-close>Ver la OC</a></div>`); return;
+  }
+  let cot = S.cots.find(c => oc.proceso && P.procesoKey(c.proceso) === P.procesoKey(oc.proceso));
+  let filas = [];
+  const armar = () => {
+    const its = cot ? (I.itemsByCot.get(cot.id) || []) : [];
+    const m = P.matchOC(oc.lineas, its);
+    filas = oc.lineas.map((l, i) => ({ l, it: m[i] }));
+  };
+  armar();
+  const opts = () => [...S.cots].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).map(c => `<option value="${c.id}" ${cot && c.id === cot.id ? 'selected' : ''}>${esc(c.proceso)} · ${fdate(c.fecha)}</option>`).join('');
+  const filaHTML = (f, i) => {
+    const its = cot ? (I.itemsByCot.get(cot.id) || []) : [];
+    const it = f.it; const dp = it && it.precio_unit && f.l.precio ? f.l.precio / it.precio_unit - 1 : null;
+    return `<tr data-i="${i}"><td>${esc(f.l.cod_cliente)}</td><td class="wrap">${esc(f.l.descripcion)}</td><td class="n">${nf0.format(f.l.cantidad || 0)}</td><td class="n">${money(f.l.precio)}</td><td class="n">${money(f.l.importe)}</td>
+      <td><select class="in" data-sel style="max-width:330px;font-size:12.5px;padding:3px 6px">${its.map(x => `<option value="${x.id}" ${x === it ? 'selected' : ''}>R${x.renglon ?? '?'} · ${esc((x.detalle || '').slice(0, 40))} · ${money(x.precio_unit)}</option>`).join('')}<option value="0" ${!it ? 'selected' : ''}>— crear renglón nuevo en la cotización —</option></select></td>
+      <td class="small">${!it ? '<span class="pill warn">nuevo</span>' : dp != null && Math.abs(dp) < 0.0005 ? '<span class="pill ok">precio OK</span>' : `<span class="pill bad">precio ${dp > 0 ? '+' : ''}${pct(dp)}</span>`}${it && it.cantidad !== f.l.cantidad ? `<div class="warn">cotizado: ${nf0.format(it.cantidad || 0)}</div>` : ''}</td></tr>`;
+  };
+  const o = modal(`<h2>Cargar orden de compra ${esc(oc.serie ? oc.serie + ' - ' : '')}${esc(oc.numero)}</h2>
+    <p class="sub">Fecha ${fdate(oc.fecha)} · ${esc(oc.proceso)} ${esc(oc.plan)} · Cond. ${esc(oc.condicion || '—')} · Vence ${fdate(oc.vence)} · Total <b>${money(oc.total)}</b></p>
+    <label class="f" style="margin:10px 0">Cotización<select class="in" id="oc_cot"><option value="">— elegir —</option>${opts()}</select></label>
+    ${!cot ? '<p class="warn small">No encontré la cotización de ese expediente: elegila arriba.</p>' : ''}
+    <div class="tw" style="max-height:48vh"><table class="t"><thead><tr><th>Cód.</th><th>Descripción OC</th><th class="n">Cant.</th><th class="n">Precio</th><th class="n">Importe</th><th>Nuestro renglón</th><th>Control</th></tr></thead><tbody id="ot">${filas.map(filaHTML).join('')}</tbody></table></div>
+    <label class="row small" style="margin-top:10px"><input type="checkbox" id="oc_resto" checked> Marcar como <b>No adjudicados</b> los demás renglones de la cotización que no estén en otra OC</label>
+    <div class="row" style="margin-top:12px"><span class="spacer"></span><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Cargar OC</button></div>`, { side: true });
+  $('.drawer', o).style.width = 'min(1100px,100%)';
+  $('#oc_cot', o).onchange = e => { cot = I.cot.get(+e.target.value) || null; armar(); $('#ot', o).innerHTML = filas.map(filaHTML).join(''); };
+  $('#ot', o).addEventListener('change', e => { if (!e.target.matches('[data-sel]')) return; const i = +e.target.closest('tr').dataset.i; filas[i].it = I.item.get(+e.target.value) || null; e.target.closest('tr').outerHTML = filaHTML(filas[i], i); });
+  $('#ok', o).onclick = async () => {
+    if (!cot) return toast('Elegí la cotización');
+    const btn = $('#ok', o); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Cargando';
+    try {
+      const its = I.itemsByCot.get(cot.id) || [];
+      let next = Math.max(0, ...its.map(i => i.renglon || 0)), ord = Math.max(0, ...its.map(i => i.orden || 0));
+      const nuevos = filas.filter(f => !f.it);
+      if (nuevos.length) {
+        const ins = await db.ins('cc_items', nuevos.map(f => ({ cotizacion_id: cot.id, renglon: ++next, orden: ++ord, cantidad: f.l.cantidad, detalle: f.l.descripcion, desc_cliente: f.l.descripcion, cod_cliente: f.l.cod_cliente, precio_unit: f.l.precio, adjudicado: true, oc: String(oc.numero), lista: its[0] ? its[0].lista : null })));
+        nuevos.forEach((f, k) => f.it = ins[k]); S.items.push(...ins);
+      }
+      const [reg] = await db.ins('cc_ocs', [{ numero: String(oc.numero), serie: oc.serie || null, fecha: oc.fecha, proceso: cot.proceso, cotizacion_id: cot.id, condicion: oc.condicion || null, vence: oc.vence, total: oc.total, plan: oc.plan || null, archivo: file.name, created_by: who() }]);
+      await db.ins('cc_oc_items', filas.map(f => ({ oc_id: reg.id, item_id: f.it.id, cod_cliente: f.l.cod_cliente, descripcion: f.l.descripcion, cantidad: f.l.cantidad, precio: f.l.precio, importe: f.l.importe })));
+      const adj = new Set(filas.map(f => f.it.id));
+      for (const f of filas) if (!nuevos.includes(f)) Object.assign(f.it, await db.upd('cc_items', f.it.id, { adjudicado: true, oc: ocMerge(f.it.oc, oc.numero), cod_cliente: f.it.cod_cliente || f.l.cod_cliente }));
+      if ($('#oc_resto', o).checked) for (const it of its) if (!adj.has(it.id) && !ocsDe(it).length && it.adjudicado !== false) Object.assign(it, await db.upd('cc_items', it.id, { adjudicado: false }));
+      const todos = I.itemsByCot.get(cot.id) || its;
+      const nAdj = [...todos, ...nuevos.map(f => f.it)].filter(i => i.adjudicado).length, nTot = todos.length + nuevos.length;
+      Object.assign(cot, await db.upd('cc_cotizaciones', cot.id, { oc: ocMerge(cot.oc, oc.numero), estado: nAdj >= nTot ? 'adjudicada' : 'parcial', updated_by: who() }));
+      await loadAll(); o.remove(); toast(`OC ${oc.numero} cargada: ${filas.length} renglones adjudicados`);
+      location.hash = '#planilla/' + encodeURIComponent('OC ' + oc.numero);
+    } catch (e) { btn.disabled = false; btn.textContent = 'Cargar OC'; toast(/cc_oc|relation|does not exist/i.test(e.message) ? 'Falta actualizar la base: corré de nuevo schema.sql en Supabase.' : 'Error: ' + e.message, 8000); }
   };
 }
 
@@ -1059,7 +1170,7 @@ function vImportar() {
   };
   $('#bk').onclick = () => {
     const wb = XLSX.utils.book_new();
-    for (const [t, a] of [['cotizaciones', S.cots], ['items', S.items], ['comparativas', S.comps], ['comp_renglones', S.rens], ['comp_ofertas', S.ofs], ['costos', S.costos]]) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(a), t);
+    for (const [t, a] of [['cotizaciones', S.cots], ['items', S.items], ['comparativas', S.comps], ['comp_renglones', S.rens], ['comp_ofertas', S.ofs], ['ocs', S.ocs], ['oc_items', S.ocItems], ['costos', S.costos]]) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(a.length ? a : [{}]), t);
     XLSX.writeFile(wb, `respaldo_cotizaciones_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 }
@@ -1093,7 +1204,20 @@ async function previewHistorico(file) {
       const idPorProc = new Map(cs.map(c => [P.norm(c.proceso), c.id]));
       const items = grupos.flatMap(g => g.items.map(it => ({ ...it, adjudicado: it.adjudicado ?? null, oc: it.oc ?? null, cotizacion_id: idPorProc.get(P.norm(g.cot.proceso)) })));
       st(`Guardando ${items.length} renglones…`);
-      if (items.length) await db.ins('cc_items', items);
+      const insertados = items.length ? await db.ins('cc_items', items) : [];
+      const origs = grupos.flatMap(g => g.items); const idDe = new Map(origs.map((x, k) => [x, insertados[k] && insertados[k].id]));
+      if (!S.faltaSchema) {
+        for (const oo of A.ocs) {
+          const ls = oo.items.filter(x => x._it && idDe.get(x._it)); if (!ls.length || I.oc.get(String(oo.oc))) continue;
+          st(`Órdenes de compra: OC ${oo.oc}…`);
+          const cotId = insertados.find(r => r.id === idDe.get(ls[0]._it))?.cotizacion_id || null;
+          try {
+            const procs = [...new Set(ls.map(x => { const r = insertados.find(q => q.id === idDe.get(x._it)); const c = r && cs.find(q => q.id === r.cotizacion_id); return c ? c.proceso : null; }).filter(Boolean))];
+            const [reg] = await db.ins('cc_ocs', [{ numero: String(oo.oc), proceso: procs.join(', ') || oo.proceso || null, cotizacion_id: procs.length === 1 ? cotId : null, total: ls.reduce((s2, x) => s2 + (x.precio_unit || 0) * (x.cantidad || 0), 0), archivo: file.name + ' (hoja OC ' + oo.oc + ')', created_by: who() }]);
+            await db.ins('cc_oc_items', ls.map(x => ({ oc_id: reg.id, item_id: idDe.get(x._it), descripcion: x.detalle, cantidad: x.cantidad, precio: x.precio_unit, importe: (x.precio_unit || 0) * (x.cantidad || 0) })));
+          } catch (e) { console.warn('OC', oo.oc, e.message); }
+        }
+      }
       await loadAll();
       // 2. comparativas históricas
       const porProc = new Map(); for (const h of histNuevos) { const k = P.norm(h.proceso); if (!porProc.has(k)) porProc.set(k, []); porProc.get(k).push(h); }

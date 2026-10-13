@@ -125,7 +125,7 @@
     for (const o of ocs) for (const x of o.items) {
       const cands = todos.filter(t => t.it.codigo === x.codigo && t.it.renglon === x.renglon && (!x.precio_unit || Math.abs((t.it.precio_unit || 0) - x.precio_unit) <= 1));
       cands.sort((a, b) => String(b.g.cot.fecha).localeCompare(String(a.g.cot.fecha)));
-      if (cands[0]) { cands[0].it.adjudicado = true; cands[0].it.oc = o.oc; cands[0].g.cot.oc = cands[0].g.cot.oc || o.oc; ocOk++; } else ocNo++;
+      if (cands[0]) { const it = cands[0].it; it.adjudicado = true; const prev = String(it.oc || '').split(/[\s,\/;]+/).filter(Boolean); if (!prev.includes(o.oc)) prev.push(o.oc); it.oc = prev.join(', '); cands[0].g.cot.oc = cands[0].g.cot.oc || o.oc; x._it = it; o.proceso = o.proceso || cands[0].g.cot.proceso; ocOk++; } else ocNo++;
     }
     if (ocNo) avisos.push(`${ocNo} renglones de hojas OC no se pudieron asociar a una cotización (se ignoran).`);
     return { cotizaciones: [...cots.values()], ocs, hist, avisos, ocOk };
@@ -371,6 +371,64 @@
     return out;
   }
 
+  // ---------- Orden de compra / provisión (ISSN) desde PDF ----------
+  async function parseOCPDF(pdfjs, data) {
+    const doc = await pdfjs.getDocument({ data, isEvalSupported: false, disableFontFace: true, useSystemFonts: false, verbosity: 0 }).promise;
+    const lineas = []; let texto = '';
+    for (let pn = 1; pn <= doc.numPages; pn++) {
+      const pg = await doc.getPage(pn);
+      const items = (await pg.getTextContent()).items.filter(i => i.str && i.str.trim()).map(i => ({ s: i.str.trim(), x: i.transform[4], y: i.transform[5], w: i.width }));
+      texto += ' ' + items.sort((a, b) => b.y - a.y || a.x - b.x).map(i => i.s).join(' ');
+      const hCant = items.find(i => /^CANTIDAD$/i.test(i.s)), hDesc = items.find(i => /^DESCRIPCI[OÓ]N$/i.test(i.s)), hPre = items.find(i => /^PRECIO/i.test(i.s)), hImp = items.find(i => /^IMPORTE/i.test(i.s));
+      if (!hCant || !hDesc || !hPre) continue;
+      const yTop = hCant.y - 1;
+      const fin = items.find(i => /^(SUBTOTAL|TOTAL)$/i.test(i.s) && i.y < yTop);
+      const yBot = fin ? fin.y + 4 : -1e9;
+      const zona = items.filter(i => i.y < yTop && i.y > yBot);
+      const anchors = zona.filter(i => i.x < hCant.x - 2 && /^[A-Z]{2,}\d{2,}$/.test(i.s)).sort((a, b) => b.y - a.y);
+      anchors.forEach((a, k) => {
+        const yNext = anchors[k + 1] ? anchors[k + 1].y + 1 : yBot;
+        const fila = zona.filter(i => i.y <= a.y + 1.5 && i.y > yNext);
+        const enLinea = fila.filter(i => Math.abs(i.y - a.y) < 1.5);
+        const nearX = (h, arr) => arr.filter(i => /^[\d.,]+$/.test(i.s)).sort((p, q) => Math.abs(p.x + p.w - (h.x + h.w)) - Math.abs(q.x + q.w - (h.x + h.w)))[0];
+        const cant = enLinea.find(i => /^[\d.,]+$/.test(i.s) && i.x < hDesc.x);
+        const nums2 = enLinea.filter(i => /^[\d.,]+$/.test(i.s) && i.x > hDesc.x + 50);
+        const pre = nearX(hPre, nums2), imp = hImp ? nearX(hImp, nums2.filter(i => i !== pre)) : null;
+        const desc = fila.filter(i => i !== a && i !== cant && i !== pre && i !== imp && i.x >= hDesc.x - 40 && i.x < hPre.x - 5).sort((p, q) => q.y - p.y || p.x - q.x).map(i => i.s).join(' ').replace(/\s+\.$/, '').replace(/\s+/g, ' ').trim();
+        lineas.push({ cod_cliente: a.s, cantidad: cant ? num(cant.s) : null, descripcion: desc, precio: pre ? num(pre.s) : null, importe: imp ? num(imp.s) : null });
+      });
+    }
+    if (!lineas.length) throw new Error('No reconocí renglones en la orden de compra.');
+    const t = texto.replace(/\s+/g, ' ');
+    const mOC = t.match(/Orden de (?:Provisi[oó]n|Compra)\s*:?\s*(?:(\d+)\s*-\s*)?(\d+)/i);
+    const mF = t.match(/Orden de (?:Provisi[oó]n|Compra)[^]*?Fecha\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+    const mE = t.match(/\bEXPTE\.?\s*(\d{5,7})/i) || t.match(/Expediente\s*:?\s*(\d{6})/i);
+    const mPlan = t.match(/EXPTE\.?\s*\d{5,7}\s+(.*?)\s+ITEM\b/i);
+    const mCond = t.match(/COND\.?\s*DE VENTA\s*:?\s*([^]*?)(?:I\.V\.A|SEÑOR|$)/i);
+    const mExp = t.match(/Fecha de expiraci[oó]n\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+    const mTot = t.match(/SUBTOTAL\s+TOTAL\s+([\d.,]+)/i);
+    return { numero: mOC ? mOC[2] : '', serie: mOC && mOC[1] ? mOC[1] : '', fecha: mF ? fechaDe(mF[1]) : null, proceso: mE ? 'EXPTE ' + mE[1] : '', plan: mPlan ? mPlan[1].trim() : '',
+      condicion: mCond ? mCond[1].trim() : '', vence: mExp ? fechaDe(mExp[1]) : null, total: mTot ? num(mTot[1]) : lineas.reduce((s, l) => s + (l.importe || 0), 0), lineas };
+  }
+  // Empareja líneas de OC con renglones cotizados. Devuelve [lineIndex] -> item | null
+  function matchOC(lineas, items) {
+    const pares = [];
+    lineas.forEach((l, i) => items.forEach(it => {
+      let s = 0;
+      if (l.cod_cliente && it.cod_cliente && l.cod_cliente.toUpperCase() === it.cod_cliente.toUpperCase()) s += 10;
+      if (l.precio && it.precio_unit && Math.abs(l.precio - it.precio_unit) <= 1) s += 7;
+      else if (l.precio && it.precio_unit && Math.abs(l.precio / it.precio_unit - 1) < 0.02) s += 3;
+      if (l.cantidad != null && it.cantidad === l.cantidad) s += 2;
+      const D = palabras(l.descripcion); const mono = palabras(it.monodroga), det = palabras(it.detalle);
+      if (mono.some(w => D.includes(w)) || (det[0] && D.includes(det[0]))) s += 3;
+      if (s >= 6) pares.push({ i, it, s });
+    }));
+    pares.sort((a, b) => b.s - a.s);
+    const res = lineas.map(() => null), usados = new Set();
+    for (const p of pares) { if (res[p.i] || usados.has(p.it)) continue; res[p.i] = p.it; usados.add(p.it); }
+    return res;
+  }
+
   // ---------- Vinculación renglón de acta ↔ ítem cotizado ----------
   const primeraPalabra = s => norm(s).split(/[ +\-\/(]/).filter(w => w.length > 2)[0] || '';
   const numeros = s => (norm(s).match(/\d+(?:[.,]\d+)?/g) || []).map(x => x.replace(',', '.'));
@@ -435,6 +493,6 @@
     return s.split(' ').map(w => w.length <= 3 && w !== 'META' ? w : w[0] + w.slice(1).toLowerCase()).join(' ').replace(/\(.*$/, '').trim();
   }
 
-  const api = { parsePedidoPDF, sugerir, palabras, canonProv, parseActaPDF, celdaActa, norm, num, txt, codigo, fechaDe, procesoKey, costoMeta, margenDe, precioDe, parseAcumulado, parseCostos, parseActa, detectarColumnas, vincular, puntaje, analizarRenglon, MESES };
+  const api = { parseOCPDF, matchOC, parsePedidoPDF, sugerir, palabras, canonProv, parseActaPDF, celdaActa, norm, num, txt, codigo, fechaDe, procesoKey, costoMeta, margenDe, precioDe, parseAcumulado, parseCostos, parseActa, detectarColumnas, vincular, puntaje, analizarRenglon, MESES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.P = api;
 })(typeof window !== 'undefined' ? window : globalThis);
