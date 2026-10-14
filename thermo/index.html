@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oferta Thermo Fisher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f6f9; --panel:#ffffff; --ink:#14213d; --muted:#5f6b7a; --line:#dde3ea; --line-strong:#c4ced9;
+  --brand:#002B64; --brand-2:#3A72B3; --accent:#93BA1F; --danger:#c0392b; --field:#fbfcfd; --focus:#3A72B3;
+  --row-alt:#f7f9fb;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1622; --panel:#172131; --ink:#e7edf5; --muted:#9aa8ba; --line:#263449; --line-strong:#33445c;
+    --brand:#7fa8dc; --brand-2:#7fa8dc; --accent:#a8cf3a; --danger:#ff7b6b; --field:#111a27; --focus:#7fa8dc; --row-alt:#1a2638;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1622; --panel:#172131; --ink:#e7edf5; --muted:#9aa8ba; --line:#263449; --line-strong:#33445c;
+  --brand:#7fa8dc; --brand-2:#7fa8dc; --accent:#a8cf3a; --danger:#ff7b6b; --field:#111a27; --focus:#7fa8dc; --row-alt:#1a2638;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "IBM Plex Sans",system-ui,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:20px 16px 120px}
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+h1{font-size:22px;margin:0;font-weight:600;letter-spacing:-.01em}
+h1 small{display:block;font-size:12px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 12px;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 14px}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:500}
+input,textarea{font:inherit;color:var(--ink);background:var(--field);border:1px solid var(--line-strong);border-radius:6px;padding:7px 9px;width:100%;min-width:0}
+input:focus,textarea:focus{outline:2px solid var(--focus);outline-offset:-1px;border-color:transparent}
+details summary{cursor:pointer;color:var(--brand-2);font-size:13px;font-weight:500;margin-top:12px}
+details[open] summary{margin-bottom:10px}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;min-width:1180px}
+th{background:var(--brand);color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:8px 6px;text-align:left;white-space:nowrap}
+:root[data-theme="dark"] th{color:#0f1622}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) th{color:#0f1622}}
+td{border-top:1px solid var(--line);padding:3px 4px;vertical-align:top}
+tbody tr:nth-child(even) td{background:var(--row-alt)}
+td input{border-color:transparent;background:transparent;padding:6px}
+td input:hover{border-color:var(--line-strong)}
+td.n{width:44px;text-align:center;color:var(--muted);font-family:"IBM Plex Mono",monospace;padding-top:9px}
+td.tot{font-family:"IBM Plex Mono",monospace;text-align:right;padding:9px 8px;white-space:nowrap}
+input.num{text-align:right;font-family:"IBM Plex Mono",monospace}
+.c-cant{width:70px}.c-det{width:24%}.c-mono{width:15%}.c-lab{width:13%}.c-pu{width:140px}.c-tot{width:140px}.c-ven{width:115px}.c-anm{width:90px}.c-x{width:34px}
+.del{border:0;background:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:6px}
+.del:hover{color:var(--danger)}
+.tbl-actions{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:10px}
+.hint{font-size:12px;color:var(--muted)}
+button.b{font:inherit;font-weight:500;border-radius:7px;padding:8px 14px;cursor:pointer;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink)}
+button.b:hover{border-color:var(--brand-2)}
+button.p{background:var(--brand);border-color:var(--brand);color:#fff}
+:root[data-theme="dark"] button.p{color:#0f1622}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) button.p{color:#0f1622}}
+button.p:hover{filter:brightness(1.1)}
+button:disabled{opacity:.5;cursor:wait}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);box-shadow:0 -4px 16px rgba(0,0,0,.06)}
+.bar .in{max-width:1280px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.total{display:flex;flex-direction:column;margin-right:auto;min-width:0}
+.total b{font:600 20px "IBM Plex Mono",monospace;color:var(--brand)}
+.total span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:62vw}
+.msg{font-size:12px;color:var(--danger)}
+body.locked .wrap, body.locked .bar{display:none}
+.gate{max-width:360px;margin:12vh auto 0;padding:0 16px}
+.gate form,.gate .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:10px}
+.gate h1{font-size:19px;margin:0 0 6px}
+.gate .err{color:var(--danger);font-size:13px;min-height:1em;margin:0}
+.gate .small{font-size:12px;color:var(--muted);margin:0}
+.who{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+@media (max-width:640px){.total span{max-width:90vw}.bar .in{gap:8px}}
+</style>
+</head>
+<body class="locked">
+<div class="gate" id="gate"><div class="box"><p class="small">Cargando…</p></div></div>
+<div class="wrap">
+  <header>
+    <h1><small>Droguería Meta · Licitaciones</small>Oferta Thermo Fisher</h1>
+    <div style="display:flex;gap:8px">
+      <span class="who"><span id="whoEmail"></span><button class="b" id="btnSalir" type="button" hidden>Salir</button></span>
+      <button class="b" id="btnNueva" type="button">Nueva oferta</button>
+    </div>
+  </header>
+
+  <section class="panel">
+    <h2>Encabezado</h2>
+    <div class="grid">
+      <label>Fecha<input type="date" id="fecha"></label>
+      <label>Cliente<input id="cliente"></label>
+      <label>Proceso<input id="proceso" placeholder="Opcional"></label>
+      <label>Expediente<input id="expediente" placeholder="Opcional"></label>
+    </div>
+    <details id="mas">
+      <summary>Más datos (dirección, apertura, objeto, condiciones)</summary>
+      <div class="grid">
+        <label>Dirección<input id="direccion" placeholder="Opcional"></label>
+        <label>Apertura<input id="apertura" placeholder="Opcional"></label>
+        <label style="grid-column:1/-1">Objeto<input id="objeto" placeholder="Opcional"></label>
+        <label>Modalidad de entrega<input id="entrega"></label>
+        <label>Mantenimiento de oferta<input id="mantenimiento"></label>
+        <label>Condición de pago<input id="pago"></label>
+      </div>
+      <p class="hint">Los campos opcionales que dejes vacíos no aparecen en la oferta.</p>
+    </details>
+  </section>
+
+  <section class="panel">
+    <h2>Renglones</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Reng</th><th class="c-cant">Cant</th><th class="c-det">Detalle</th><th class="c-mono">Monodroga</th><th class="c-lab">Laboratorio</th>
+          <th class="c-pu">Pcio unitario</th><th class="c-tot" style="text-align:right">Total</th><th class="c-ven">Vencimiento</th><th class="c-anm">Cert. ANMAT</th><th class="c-x"></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="tbl-actions">
+      <button class="b" id="btnAdd" type="button">+ Renglón</button>
+      <span class="hint">Podés pegar varias filas desde Excel en cualquier celda, en este orden: Cant · Detalle · Monodroga · Laboratorio · Precio · Vencimiento · ANMAT.</span>
+    </div>
+  </section>
+</div>
+
+<div class="bar"><div class="in">
+  <div class="total"><b id="tot">$ 0,00</b><span id="letras">SON PESOS: CERO CON 00/100</span></div>
+  <span class="msg" id="msg"></span>
+  <button class="b" id="btnXlsx" type="button">Descargar Excel</button>
+  <button class="b p" id="btnPdf" type="button">Descargar PDF</button>
+</div></div>
+
+<script src="lib/jszip.min.js"></script>
+<script src="lib/jspdf.umd.min.js"></script>
+<script src="lib/jspdf.plugin.autotable.min.js"></script>
+<!-- mismo login y proyecto Supabase que comparativas -->
+<script src="../comparativas/config.js"></script>
+<script src="../comparativas/lib/supabase.js"></script>
+<script>
+(function(){
+let A = window.OFERTA_ASSETS || null;   // plantilla + imágenes: se traen de Supabase después del login
+const $ = id => document.getElementById(id);
+const DEF = {cliente:'Thermo Fisher', entrega:'A COORDINAR', mantenimiento:'7 DIAS CORRIDOS', pago:'30 DIAS'};
+const HEAD_FIELDS = ['fecha','cliente','proceso','expediente','direccion','apertura','objeto','entrega','mantenimiento','pago'];
+const COLS = ['cant','det','mono','lab','pu','ven','anm'];   // orden editable / de pegado
+const KEY = 'oferta-thermo-borrador-v1';
+
+/* ---------- números ---------- */
+function parseNum(s){
+  if (s == null) return 0;
+  s = String(s).trim().replace(/[$\s]/g,'');
+  if (!s) return 0;
+  if (s.includes(',')) s = s.replace(/\./g,'').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g,'');
+  const n = parseFloat(s);
+  return isFinite(n) ? n : 0;
+}
+const r2 = n => Math.round(n*100)/100;
+const fmtMoney = n => '$ ' + n.toLocaleString('es-AR',{minimumFractionDigits:2, maximumFractionDigits:2});
+const fmtQty = n => n.toLocaleString('es-AR',{maximumFractionDigits:2});
+
+/* ---------- número a letras ---------- */
+const UN = ['','UNO','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE','VEINTE','VEINTIUNO','VEINTIDÓS','VEINTITRÉS','VEINTICUATRO','VEINTICINCO','VEINTISÉIS','VEINTISIETE','VEINTIOCHO','VEINTINUEVE'];
+const DEC = ['','','','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
+const CEN = ['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
+function lt100(n){ if(n<30) return UN[n]; const d=Math.floor(n/10),u=n%10; return DEC[d]+(u?' Y '+UN[u]:''); }
+function lt1000(n){ if(n===100) return 'CIEN'; const c=Math.floor(n/100),r=n%100; return [CEN[c], r?lt100(r):''].filter(Boolean).join(' '); }
+function apoc(s){ return s.replace(/VEINTIUNO$/,'VEINTIÚN').replace(/UNO$/,'UN'); }
+function enteroLetras(n){
+  if (n===0) return 'CERO';
+  const parts=[];
+  const mill = Math.floor(n/1e6), mil = Math.floor((n%1e6)/1000), resto = n%1000;
+  if (mill){ if (mill>=1e6) return String(n); parts.push(mill===1 ? 'UN MILLÓN' : apoc(enteroLetras(mill))+' MILLONES'); }
+  if (mil){ parts.push(mil===1 ? 'MIL' : apoc(lt1000(mil))+' MIL'); }
+  if (resto){ parts.push(lt1000(resto)); }
+  return parts.join(' ');
+}
+function montoLetras(x){
+  x = r2(Math.abs(x));
+  const ent = Math.floor(x), cent = Math.round((x-ent)*100);
+  return enteroLetras(ent) + ' CON ' + String(cent).padStart(2,'0') + '/100';
+}
+
+/* ---------- estado ---------- */
+let rows = [];
+function blankRow(){ return {cant:'',det:'',mono:'',lab:'',pu:'',ven:'',anm:''}; }
+function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
+function head(){ const o={}; HEAD_FIELDS.forEach(k=>o[k]=$(k).value.trim()); return o; }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({head:head(), rows})); }catch(e){} }
+function load(){
+  let st=null; try{ st=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){}
+  const h = Object.assign({fecha:todayISO()}, DEF, st && st.head || {});
+  HEAD_FIELDS.forEach(k => $(k).value = h[k] || '');
+  rows = (st && st.rows && st.rows.length) ? st.rows : [blankRow()];
+  if (['direccion','apertura','objeto'].some(k=>h[k])) $('mas').open = true;
+}
+function items(){
+  return rows.map(r => ({...r, q:parseNum(r.cant), p:parseNum(r.pu)}))
+             .filter(r => r.det.trim() || r.q || r.p)
+             .map((r,i) => ({...r, n:i+1, t:r2(r.q*r.p)}));
+}
+
+/* ---------- tabla ---------- */
+const tbody = $('rows');
+function render(){
+  tbody.innerHTML='';
+  rows.forEach((r,i) => {
+    const tr=document.createElement('tr');
+    tr.innerHTML = `<td class="n">${i+1}</td>
+      <td><input class="num" data-k="cant" inputmode="decimal"></td>
+      <td><input data-k="det"></td><td><input data-k="mono"></td><td><input data-k="lab"></td>
+      <td><input class="num" data-k="pu" inputmode="decimal"></td>
+      <td class="tot"></td>
+      <td><input data-k="ven" placeholder="dd/mm/aaaa"></td><td><input data-k="anm"></td>
+      <td><button class="del" title="Quitar renglón" type="button">×</button></td>`;
+    tr.querySelectorAll('input').forEach(inp => { inp.value = r[inp.dataset.k] || ''; inp.dataset.i = i; });
+    tr.querySelector('.del').onclick = () => { rows.splice(i,1); if(!rows.length) rows.push(blankRow()); render(); save(); };
+    tbody.appendChild(tr);
+  });
+  recalc();
+}
+function recalc(){
+  let tot=0;
+  [...tbody.rows].forEach((tr,i) => {
+    const r=rows[i], t=r2(parseNum(r.cant)*parseNum(r.pu)); tot+=t;
+    tr.querySelector('.tot').textContent = (r.cant||r.pu) ? fmtMoney(t) : '';
+  });
+  tot=r2(tot);
+  $('tot').textContent = fmtMoney(tot);
+  $('letras').textContent = 'SON PESOS: ' + montoLetras(tot);
+}
+tbody.addEventListener('input', e => {
+  const t=e.target; if(!t.dataset.k) return;
+  rows[+t.dataset.i][t.dataset.k] = t.value; recalc(); save();
+});
+tbody.addEventListener('paste', e => {
+  const t=e.target; if(!t.dataset.k) return;
+  const txt=(e.clipboardData||window.clipboardData).getData('text');
+  if (!/[\t\n]/.test(txt.replace(/\r?\n$/,''))) return;
+  e.preventDefault();
+  const lines = txt.replace(/\r/g,'').replace(/\n+$/,'').split('\n');
+  let ri=+t.dataset.i; const c0=COLS.indexOf(t.dataset.k);
+  lines.forEach(line => {
+    if (!rows[ri]) rows.push(blankRow());
+    line.split('\t').forEach((v,j) => { const k=COLS[c0+j]; if(k) rows[ri][k]=v.trim(); });
+    ri++;
+  });
+  render(); save();
+});
+tbody.addEventListener('keydown', e => {
+  if (e.key==='Enter' && e.target.dataset.k){
+    e.preventDefault();
+    const i=+e.target.dataset.i, k=e.target.dataset.k;
+    if (i===rows.length-1){ rows.push(blankRow()); render(); save(); }
+    const nx=tbody.querySelector(`input[data-i="${i+1}"][data-k="${k}"]`); if(nx) nx.focus();
+  }
+});
+HEAD_FIELDS.forEach(k => $(k).addEventListener('input', save));
+$('btnAdd').onclick = () => { rows.push(blankRow()); render(); save(); tbody.querySelector(`input[data-i="${rows.length-1}"][data-k="cant"]`).focus(); };
+$('btnNueva').onclick = () => {
+  if (!confirm('¿Empezar una oferta nueva? Se borran los renglones cargados.')) return;
+  rows=[blankRow()]; HEAD_FIELDS.forEach(k => $(k).value=''); Object.entries(DEF).forEach(([k,v])=>$(k).value=v); $('fecha').value=todayISO();
+  render(); save();
+};
+
+/* ---------- utilidades de salida ---------- */
+function fechaParts(){ const v=$('fecha').value||todayISO(); const [y,m,d]=v.split('-').map(Number); return {y,m,d}; }
+function fechaTxt(){ const {y,m,d}=fechaParts(); return String(d).padStart(2,'0')+'/'+String(m).padStart(2,'0')+'/'+y; }
+function fileBase(){
+  const h=head(); const {y,m,d}=fechaParts();
+  const ref = (h.proceso||h.expediente||'').replace(/[\\/:*?"<>|]+/g,'-').trim();
+  return 'Oferta ' + (h.cliente||'Thermo Fisher') + (ref?' - '+ref:'') + ' - ' + [String(d).padStart(2,'0'),String(m).padStart(2,'0'),y].join('-');
+}
+let dlNs; const dlReady = (window.claude && window.claude.use) ? window.claude.use('downloads').then(n=>dlNs=n).catch(()=>null) : Promise.resolve(null);
+async function download(blob, name){
+  if (window.claude && window.claude.use){
+    const ns = dlNs || await dlReady;
+    if (ns){
+      try{ await ns.save({filename:name, data:blob}); }
+      catch(e){ if (e && e.code!=='declined') $('msg').textContent='No se pudo descargar: '+(e.message||e.code); }
+      return;
+    }
+  }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},1500);
+}
+function cond(){
+  const h=head();
+  return [
+    '*** LOS PRECIOS UNITARIOS SON POR ENVASE /CAJA CERRADA,',
+    '*** CANTIDADES, LOTES Y VENCIMIENTOS SUJETOS A DISPONIBILIDAD DEL LABORATORIO AL CONFIRMAR LA OC.',
+    '*** LA COTIZACION ES POR LA COMPRA DE LA TOTALIDAD DE LOS ITEMS.',
+    '*** MODALIDAD DE ENTREGA: ' + (h.entrega||DEF.entrega).toUpperCase(),
+    '*** MANTENIMIENTO DE OFERTA ' + (h.mantenimiento||DEF.mantenimiento).toUpperCase(),
+    '*** CONDICION DE PAGO: ' + (h.pago||DEF.pago).toUpperCase(),
+    '*** LA DOCUMENTACION ADICIONAL QUE SE REQUIERA, ESTARÁ SUJETA A LA PRESENTACION DE LA MISMA POR PARTE DEL LABORATORIO'
+  ];
+}
+const DEVOL = [
+  '1. Productos con empaque abierto o dañado, salvo que se haya reclamado a Drogueria Meta dentro de las 24 hs hábiles de haberlo recepcionado (según Acuerdo de Calidad)',
+  '2. Productos con etiqueta de trazabilidad (de origen o 414) que sea perfectamente leída por lector de QR.',
+  '3. Productos con diferencias en packaging secundario siendo del mismo lote (diferencia de color, de impresión, de certificado u otras) que pueda ser subsanado a través de nota del laboratorio reconociendo el origen. Droguería Meta no se responsabiliza por los plazos de respuesta del laboratorio.'
+];
+const EMPRESA = [['Razón social','Droguería Meta S.A.'],['Dirección','Av Mitre 3690 -Munro-Vicente Lopez-Bs. As CP 1605'],['Teléfono','(011)  4006-6382'],['Celular','(011) 15-4997-7133'],['Mail','licitaciones@meta.com.ar'],['CUIT','30-66183877-5']];
+function validar(){
+  const it=items();
+  if (!it.length){ $('msg').textContent='Cargá al menos un renglón.'; return null; }
+  $('msg').textContent='';
+  return it;
+}
+
+/* ---------- Excel: completa la plantilla original ---------- */
+async function buildXlsx(it){
+  const zip = await JSZip.loadAsync(A.plantilla, {base64:true});
+  const SP = 'xl/worksheets/sheet1.xml';
+  const doc = new DOMParser().parseFromString(await zip.file(SP).async('string'), 'application/xml');
+  const NS = doc.documentElement.namespaceURI;
+  const q = (el,tag) => [...el.getElementsByTagNameNS(NS,tag)];
+  const N = it.length, D = N-1;
+  const sheetData = q(doc,'sheetData')[0];
+  const rowEl = r => q(sheetData,'row').find(x => +x.getAttribute('r')===r);
+  const shiftRef = ref => ref.replace(/([A-Z]+)(\d+)/g, (m,c,r) => c + (+r>=23 ? +r+D : +r));
+
+  // 1) correr filas desde la 23
+  q(sheetData,'row').forEach(row => {
+    const r=+row.getAttribute('r'); if (r<23) return;
+    row.setAttribute('r', r+D);
+    q(row,'c').forEach(c => c.setAttribute('r', shiftRef(c.getAttribute('r'))));
+  });
+  q(doc,'mergeCell').forEach(m => m.setAttribute('ref', shiftRef(m.getAttribute('ref'))));
+  q(doc,'hyperlink').forEach(h => h.setAttribute('ref', shiftRef(h.getAttribute('ref'))));
+  q(doc,'dimension').forEach(d => d.setAttribute('ref', shiftRef(d.getAttribute('ref'))));
+
+  // 2) duplicar fila modelo 22 para cada renglón
+  const tpl = rowEl(22); let prev = tpl;
+  for (let i=1;i<N;i++){
+    const cl = tpl.cloneNode(true); const r=22+i;
+    cl.setAttribute('r', r);
+    q(cl,'c').forEach(c => c.setAttribute('r', c.getAttribute('r').replace(/\d+$/, r)));
+    prev.parentNode.insertBefore(cl, prev.nextSibling); prev = cl;
+  }
+
+  function cell(r, col){
+    const row=rowEl(r); const ref=col+r;
+    let c=q(row,'c').find(x=>x.getAttribute('r')===ref);
+    if (!c){ c=doc.createElementNS(NS,'c'); c.setAttribute('r',ref); row.appendChild(c); }
+    while (c.firstChild) c.removeChild(c.firstChild);
+    c.removeAttribute('t');
+    return c;
+  }
+  function setStr(r,col,txt){
+    const c=cell(r,col); if (txt==null || txt==='') return;
+    c.setAttribute('t','inlineStr');
+    const is=doc.createElementNS(NS,'is'), t=doc.createElementNS(NS,'t');
+    t.setAttribute('xml:space','preserve'); t.textContent=txt; is.appendChild(t); c.appendChild(is);
+  }
+  function setNum(r,col,n,f){
+    const c=cell(r,col);
+    if (f){ const fe=doc.createElementNS(NS,'f'); fe.textContent=f; c.appendChild(fe); }
+    const v=doc.createElementNS(NS,'v'); v.textContent=String(n); c.appendChild(v);
+  }
+  function unhide(r){ const row=rowEl(r); if(row) row.removeAttribute('hidden'); }
+
+  // 3) encabezado
+  const h=head(); const {y,m,d}=fechaParts();
+  setNum(5,'I', Math.round((Date.UTC(y,m-1,d)-Date.UTC(1899,11,30))/86400000));
+  setStr(8,'C', h.cliente||'Thermo Fisher');
+  [['direccion',10],['proceso',12],['expediente',14],['apertura',16],['objeto',18]].forEach(([k,r]) => {
+    setStr(r,'C', h[k]);
+    if (h[k]){ unhide(r); unhide(r-1); }
+  });
+
+  // 4) renglones
+  it.forEach((x,i) => {
+    const r=22+i;
+    setNum(r,'A', x.n);
+    setNum(r,'B', x.q);
+    setStr(r,'C', x.det.trim());
+    setStr(r,'D', x.mono.trim());
+    setStr(r,'E', x.lab.trim());
+    setNum(r,'F', x.p);
+    setNum(r,'G', x.t, `B${r}*F${r}`);
+    setStr(r,'H', x.ven.trim());
+    const anm=x.anm.trim();
+    if (/^\d+$/.test(anm)) setNum(r,'I', +anm); else setStr(r,'I', anm);
+    // alto de fila según largo del detalle (columna de ~45 caracteres)
+    const lines = Math.max(1, Math.ceil(x.det.trim().length/45), Math.ceil(x.mono.trim().length/33), Math.ceil(x.lab.trim().length/35));
+    const row=rowEl(r);
+    if (lines>1){ row.setAttribute('ht', (15.6*lines).toFixed(1)); row.setAttribute('customHeight','1'); }
+    else { row.setAttribute('ht','15.6'); row.removeAttribute('customHeight'); }
+  });
+  const total = r2(it.reduce((s,x)=>s+x.t,0));
+  setNum(23+D,'G', total, `SUM(G22:G${21+N})`);
+  setStr(24+D,'D', montoLetras(total));
+  cond().forEach((txt,i) => setStr(27+i+D,'A', txt));
+
+  let xml = new XMLSerializer().serializeToString(doc);
+  if (!xml.startsWith('<?xml')) xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + xml;
+  zip.file(SP, xml);
+
+  // 5) correr imágenes (firma) que estén debajo de la tabla
+  const DP='xl/drawings/drawing1.xml';
+  if (zip.file(DP) && D){
+    let dx = await zip.file(DP).async('string');
+    dx = dx.replace(/<xdr:row>(\d+)<\/xdr:row>/g, (mm,n) => '<xdr:row>' + (+n>=22 ? +n+D : +n) + '</xdr:row>');
+    zip.file(DP, dx);
+  }
+
+  // 6) sacar calcChain y forzar recálculo al abrir
+  zip.remove('xl/calcChain.xml');
+  const RP='xl/_rels/workbook.xml.rels';
+  zip.file(RP, (await zip.file(RP).async('string')).replace(/<Relationship[^>]*calcChain[^>]*\/>/,''));
+  const CT='[Content_Types].xml';
+  zip.file(CT, (await zip.file(CT).async('string')).replace(/<Override[^>]*calcChain[^>]*\/>/,''));
+  const WB='xl/workbook.xml';
+  zip.file(WB, (await zip.file(WB).async('string')).replace(/<calcPr([^>]*?)\/>/, (m,a) => '<calcPr'+a.replace(/\s*fullCalcOnLoad="[^"]*"/,'')+' fullCalcOnLoad="1"/>'));
+
+  return zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression:'DEFLATE'});
+}
+
+/* ---------- PDF ---------- */
+function buildPdf(it){
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({unit:'mm', format:'a4', orientation:'portrait'});
+  const W=210, H=297, M=12, CW=W-2*M;
+  const NAVY=[0,43,100], BLUE=[58,114,179], RED=[200,0,0], GRAY=[60,60,60];
+  const FOOT_H = CW*73/926, FOOT_Y = H-6-FOOT_H, LIMIT = FOOT_Y-4;
+  const h=head();
+
+  // encabezado
+  pdf.addImage(A.logo,'PNG', M, 9, 50, 50*350/1020);
+  pdf.setFont('helvetica','normal'); pdf.setFontSize(10); pdf.setTextColor(...GRAY);
+  pdf.text('Buenos Aires, ' + fechaTxt(), W-M, 22, {align:'right'});
+  pdf.setDrawColor(...NAVY); pdf.setLineWidth(0.6); pdf.line(M, 28, W-M, 28);
+
+  let y=36;
+  const campos=[['Cliente',h.cliente||'Thermo Fisher'],['Dirección',h.direccion],['Proceso',h.proceso],['Expediente',h.expediente],['Apertura',h.apertura],['Objeto',h.objeto]].filter(x=>x[1]);
+  pdf.setFontSize(10);
+  campos.forEach(([k,v]) => {
+    pdf.setFont('helvetica','bold'); pdf.setTextColor(...NAVY); pdf.text(k+' :', M, y);
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(20,20,20);
+    const ls=pdf.splitTextToSize(v, CW-28); pdf.text(ls, M+28, y); y += 5.5*ls.length;
+  });
+  y += 3;
+
+  // tabla
+  pdf.autoTable({
+    startY:y, margin:{left:M,right:M,bottom:H-LIMIT},
+    head:[['RENG','CANT','DETALLE','MONODROGA','LABORATORIO','PCIO UNITARIO','TOTAL COTIZADO','VENCIMIENTO','CERTIFICADO ANMAT']],
+    body: it.map(x => [x.n, fmtQty(x.q), x.det.trim(), x.mono.trim(), x.lab.trim(), fmtMoney(x.p), fmtMoney(x.t), x.ven.trim(), x.anm.trim()]),
+    foot:[[{content:'TOTAL', colSpan:6, styles:{halign:'right'}}, {content:fmtMoney(r2(it.reduce((s,x)=>s+x.t,0))), styles:{halign:'right'}}, {content:'', colSpan:2}]],
+    theme:'grid',
+    styles:{font:'helvetica', fontSize:7.2, cellPadding:1.3, textColor:[20,20,20], lineColor:[150,150,150], lineWidth:0.15, valign:'middle', overflow:'linebreak'},
+    headStyles:{fillColor:NAVY, textColor:255, fontStyle:'bold', halign:'center', fontSize:6.6},
+    footStyles:{fillColor:[235,240,247], textColor:NAVY, fontStyle:'bold', fontSize:8},
+    showFoot:'lastPage',
+    columnStyles:{0:{cellWidth:9,halign:'center'},1:{cellWidth:10,halign:'center'},2:{cellWidth:39},3:{cellWidth:27},4:{cellWidth:26},
+                  5:{cellWidth:21,halign:'right'},6:{cellWidth:23,halign:'right'},7:{cellWidth:16,halign:'center'},8:{cellWidth:15,halign:'center'}},
+  });
+  y = pdf.lastAutoTable.finalY + 6;
+
+  const ensure = need => { if (y+need > LIMIT){ pdf.addPage(); y = 18; } };
+  const total = r2(it.reduce((s,x)=>s+x.t,0));
+  pdf.setFontSize(9);
+  const sp = pdf.splitTextToSize(montoLetras(total), CW-26);
+  ensure(5*sp.length+4);
+  pdf.setFont('helvetica','bold'); pdf.setTextColor(...NAVY); pdf.text('SON PESOS:', M, y);
+  pdf.setFont('helvetica','normal'); pdf.setTextColor(20,20,20); pdf.text(sp, M+24, y);
+  y += 4.5*sp.length + 6;
+
+  // condiciones
+  pdf.setFontSize(7.6);
+  const para = (txt, color, bold, gap=1) => {
+    pdf.setFont('helvetica', bold?'bold':'normal'); pdf.setTextColor(...color);
+    const ls=pdf.splitTextToSize(txt, CW); ensure(3.4*ls.length); pdf.text(ls, M, y); y += 3.4*ls.length + gap;
+  };
+  cond().forEach(t => para(t, [20,20,20], true));
+  y += 3;
+  para('***NO SE ACEPTARÁN DEVOLUCIONES EN LOS SIGUIENTES  CASO:', RED, true);
+  DEVOL.forEach(t => para(t, [20,20,20], false));
+  y += 2;
+  para('En ningún concepto se aceptarán devoluciones de productos identificados como “sin devolución” al momento de la cotización.'.replace(/[“”]/g,'"'), RED, true);
+
+  // datos empresa + firma
+  ensure(52); y += 6;
+  pdf.setDrawColor(...BLUE); pdf.setLineWidth(0.3); pdf.line(M, y-4, W-M, y-4);
+  const y0=y; pdf.setFontSize(9);
+  EMPRESA.forEach(([k,v]) => {
+    pdf.setFont('helvetica','bold'); pdf.setTextColor(...NAVY); pdf.text(k+' :', M+24, y, {align:'right'});
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(k==='Mail'?BLUE[0]:20, k==='Mail'?BLUE[1]:20, k==='Mail'?BLUE[2]:20);
+    pdf.text(v, M+26, y); y += 5;
+  });
+  const fx = W-M-58, fw=34, fh=fw*192/168;
+  pdf.addImage(A.firma,'PNG', fx+12, y0-4, fw, fh);
+  const ly = y0-4+fh+2;
+  pdf.setDrawColor(20,20,20); pdf.setLineWidth(0.3); pdf.line(fx, ly, fx+58, ly);
+  pdf.setFont('helvetica','bold'); pdf.setFontSize(7.5); pdf.setTextColor(20,20,20);
+  pdf.text('DEPARTAMENTO DE LICITACIONES', fx+29, ly+4, {align:'center'});
+  pdf.text('DROGUERÍA META S.A', fx+29, ly+7.5, {align:'center'});
+
+  // pie en todas las páginas
+  const np = pdf.getNumberOfPages();
+  for (let p=1;p<=np;p++){
+    pdf.setPage(p);
+    pdf.addImage(A.pie,'PNG', M, FOOT_Y, CW, FOOT_H);
+    if (np>1){ pdf.setFont('helvetica','normal'); pdf.setFontSize(7); pdf.setTextColor(...GRAY); pdf.text(`Página ${p} de ${np}`, W-M, FOOT_Y-1.5, {align:'right'}); }
+  }
+  return pdf.output('blob');
+}
+
+async function run(btn, fn, ext){
+  const it=validar(); if(!it) return;
+  btn.disabled=true;
+  try{ await download(await fn(it), fileBase()+ext); }
+  catch(e){ console.error(e); $('msg').textContent='Error al generar: '+e.message; }
+  finally{ btn.disabled=false; }
+}
+$('btnXlsx').onclick = function(){ run(this, buildXlsx, '.xlsx'); };
+$('btnPdf').onclick  = function(){ run(this, buildPdf, '.pdf'); };
+
+window.__oferta = {buildXlsx, buildPdf, items, montoLetras};
+/* ---------- login (Supabase, mismos usuarios que comparativas) ---------- */
+const gate = $('gate');
+const escH = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function gateMsg(title, msg){ gate.innerHTML = `<div class="box"><h1>${escH(title)}</h1><p class="err">${escH(msg)}</p></div>`; }
+function abrir(email){
+  load(); render();
+  $('whoEmail').textContent = email || '';
+  document.body.classList.remove('locked'); gate.hidden = true;
+}
+async function traerRecursos(sb){
+  const { data, error } = await sb.from('of_recursos').select('clave,contenido');
+  if (error) throw new Error(error.message);
+  const o = {}; (data||[]).forEach(r => o[r.clave] = r.contenido);
+  if (!o.plantilla || !o.logo || !o.firma || !o.pie) throw new Error('Faltan los recursos de la oferta. ¿Corriste thermo/schema.sql en Supabase?');
+  A = o;
+}
+function loginView(sb, msg=''){
+  gate.hidden = false; document.body.classList.add('locked');
+  gate.innerHTML = `<form id="lf"><h1>Oferta Thermo Fisher</h1>
+    <input type="email" id="em" placeholder="Email" autocomplete="username" required>
+    <input type="password" id="pw" placeholder="Contraseña" autocomplete="current-password" required>
+    <button class="b p" type="submit">Ingresar</button>
+    <p class="err">${escH(msg)}</p>
+    <p class="small">Mismo usuario y contraseña que comparativas.</p></form>`;
+  $('em').focus();
+  $('lf').onsubmit = async e => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button'); btn.disabled = true;
+    const { data, error } = await sb.auth.signInWithPassword({ email: $('em').value.trim(), password: $('pw').value });
+    if (error){ btn.disabled = false; return loginView(sb, 'No se pudo ingresar: ' + error.message); }
+    entrar(sb, data.user);
+  };
+}
+async function entrar(sb, user){
+  gate.innerHTML = '<div class="box"><p class="small">Cargando…</p></div>';
+  try { await traerRecursos(sb); }
+  catch(e){ return gateMsg('Error', e.message); }
+  $('btnSalir').hidden = false;
+  $('btnSalir').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+  abrir(user && user.email);
+}
+(async function iniciar(){
+  if (A){ abrir(''); return; }   // recursos ya embebidos (vista privada dentro de Claude)
+  const C = window.CONFIG || {};
+  if (!window.supabase || !C.SUPABASE_URL || !C.SUPABASE_ANON_KEY)
+    return gateMsg('Error', 'No se encontró la configuración de Supabase (../comparativas/config.js).');
+  const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
+  const { data } = await sb.auth.getSession();
+  if (data && data.session) entrar(sb, data.session.user); else loginView(sb);
+})();
+})();
+</script>
+</body>
+</html>
