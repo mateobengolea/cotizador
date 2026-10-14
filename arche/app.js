@@ -394,22 +394,23 @@ function sugBox(inp, box, fn, pick) {
 // ======================================================================
 //  PLANILLA
 // ======================================================================
-const PF = { mes: null, q: '', pend: false };
+const PF = { mes: null, q: '', desp: '', dia: '' };   // desp: '' todos | 'pend' solo sin despachar | 'ok' ocultar sin despachar
 function viewPlanilla(main) {
-  if ((location.hash.split('/')[1] || '') === 'pend') { PF.pend = true; history.replaceState(null, '', '#planilla'); }
+  if ((location.hash.split('/')[1] || '') === 'pend') { PF.desp = 'pend'; history.replaceState(null, '', '#planilla'); }
   const meses = [...new Set(S.peds.map(p => (p.fecha || '').slice(0, 7)))].sort().reverse();
   if (PF.mes == null) PF.mes = '';
   main.innerHTML = `
   <div class="row" style="margin-bottom:10px"><h1>Planilla</h1><span class="sub" id="cnt"></span><span class="spacer"></span>
     <input class="in" id="q" placeholder="Buscar afiliado, receta, producto…" value="${esc(PF.q)}" style="width:260px">
-    <label class="small row" style="gap:5px"><input type="checkbox" id="pend" ${PF.pend ? 'checked' : ''}> Solo sin despachar</label>
+    <span class="row" style="gap:4px"><input class="in" type="date" id="dia" value="${PF.dia}" title="Ver un solo día"><button class="btn sm" id="hoy">Hoy</button>${PF.dia ? '<button class="btn sm" id="sinDia" title="Quitar el filtro de día">✕</button>' : ''}</span>
+    <select class="in" id="desp">${[['', 'Todos (despachados y sin despachar)'], ['pend', 'Solo sin despachar'], ['ok', 'Ocultar sin despachar']].map(([k, l]) => `<option value="${k}" ${PF.desp === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
     <button class="btn" id="xls">Exportar a Excel</button><a class="btn pri" href="#nuevo">＋ Nuevo pedido</a></div>
-  <div class="tabsm">${[['', 'Todos'], ...meses.map(m => [m || 'none', m ? MES3[Number(m.slice(5)) - 1] + '-' + m.slice(2, 4) : 'Sin fecha'])].map(([k, l]) => `<a href="#" data-m="${k}" class="${PF.mes === k ? 'on' : ''}">${l}</a>`).join('')}</div>
+  <div class="tabsm">${[['', 'Todos'], ...meses.map(m => [m || 'none', m ? MES3[Number(m.slice(5)) - 1] + '-' + m.slice(2, 4) : 'Sin fecha'])].map(([k, l]) => `<a href="#" data-m="${k}" class="${!PF.dia && PF.mes === k ? 'on' : ''}">${l}</a>`).join('')}</div>
   <div class="tw"><table class="t"><thead><tr><th>Fecha</th><th class="n">N°</th><th>Afiliado</th><th>Receta</th><th>Producto</th><th>Despachado</th><th>Entrega</th><th>Plan</th><th>AUT.</th><th class="n">Precio a sacar</th><th class="n">Margen</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
   <p class="small muted">El precio queda guardado tal como estaba el día del pedido. Los pedidos sin precio (importados) muestran el de hoy en gris.</p>`;
   const draw = () => {
     const f = fold(PF.q);
-    const rows = S.peds.filter(p => (!PF.mes || (PF.mes === 'none' ? !p.fecha : (p.fecha || '').startsWith(PF.mes))) && (!PF.pend || !nkey(p.despachado).startsWith('SI'))
+    const rows = S.peds.filter(p => (!PF.dia || p.fecha === PF.dia) && (PF.dia || !PF.mes || (PF.mes === 'none' ? !p.fecha : (p.fecha || '').startsWith(PF.mes))) && (!PF.desp || (PF.desp === 'pend') === !nkey(p.despachado).startsWith('SI'))
       && (!f || fold([p.afiliado, p.receta, p.producto, p.numero].join(' ')).includes(f)))
       .sort((a, b) => (b.numero ?? 0) - (a.numero ?? 0));
     $('#cnt').textContent = rows.length + ' pedidos';
@@ -429,8 +430,12 @@ function viewPlanilla(main) {
     });
   };
   $('#q').oninput = e => { PF.q = e.target.value; draw(); };
-  $('#pend').onchange = e => { PF.pend = e.target.checked; draw(); };
-  $$('.tabsm a').forEach(a => a.onclick = e => { e.preventDefault(); PF.mes = a.dataset.m; viewPlanilla(main); });
+  const setDia = d => { PF.dia = d; if (d) PF.mes = ''; viewPlanilla(main); };
+  $('#dia').onchange = e => setDia(e.target.value);
+  $('#hoy').onclick = () => setDia(hoyISO());
+  if ($('#sinDia')) $('#sinDia').onclick = () => setDia('');
+  $('#desp').onchange = e => { PF.desp = e.target.value; draw(); };
+  $$('.tabsm a').forEach(a => a.onclick = e => { e.preventDefault(); PF.mes = a.dataset.m; PF.dia = ''; viewPlanilla(main); });
   $('#xls').onclick = exportarExcel;
   draw();
 }
