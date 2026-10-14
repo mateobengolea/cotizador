@@ -45,7 +45,7 @@ const db = DEMO ? (() => {
   const chunk = (a, n) => { const o = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
   const chk = ({ data, error }) => { if (error) { const e = new Error(error.message); e.code = error.code; throw e; } return data; };
   return {
-    async all(t) { let out = [], i = 0; for (;;) { const d = chk(await sb.from(t).select('*').order('id').range(i, i + 999)); out = out.concat(d); if (d.length < 1000) return out; i += 1000; } },
+    async all(t) { let out = [], i = 0; for (;;) { const d = chk(await sb.from(t).select('*').order(t === 'ah_config' ? 'clave' : 'id').range(i, i + 999)); out = out.concat(d); if (d.length < 1000) return out; i += 1000; } },
     async ins(t, rows) { let out = []; for (const c of chunk(rows, 500)) out = out.concat(chk(await sb.from(t).insert(c).select())); return out; },
     async upd(t, id, patch) { return chk(await sb.from(t).update(patch).eq('id', id).select())[0]; },
     async del(t, col, vals) { for (const c of chunk(vals, 300)) chk(await sb.from(t).delete().in(col, c)); },
@@ -79,7 +79,7 @@ async function loadAll() {
     Object.assign(S, { peds, faltaSchema: false });
     S.cfg = Object.fromEntries(cfg.map(r => [r.clave, r.valor]));
   } catch (e) {
-    if (/ah_pedidos|ah_config|does not exist|schema cache/i.test(e.message)) S.faltaSchema = true; else throw e;
+    if (/ah_pedidos|ah_config|does not exist|schema cache|permission denied/i.test(e.message)) { S.faltaSchema = true; S.schemaErr = e.message; } else throw e;
   }
   reindex();
 }
@@ -233,7 +233,7 @@ function route() {
   const v = (location.hash.slice(1) || 'nuevo').split('/')[0];
   $$('.overlay').forEach(o => o.remove());
   const main = shell(v);
-  if (S.faltaSchema) { main.innerHTML = `<div class="card"><h2>Falta crear las tablas</h2><p>Entrá a Supabase → proyecto <b>Cotizador</b> → <b>SQL Editor</b>, pegá el contenido de <code>arche/schema.sql</code> y tocá <b>Run</b>. Después recargá esta página.</p></div>`; return; }
+  if (S.faltaSchema) { main.innerHTML = `<div class="card"><h2>Falta crear las tablas</h2><p>Entrá a Supabase → proyecto <b>Cotizador</b> → <b>SQL Editor</b>, pegá el contenido de <code>arche/schema.sql</code> y tocá <b>Run</b>. Después recargá esta página.</p>${S.schemaErr ? `<p class="small muted">Detalle técnico: <code>${esc(S.schemaErr)}</code></p>` : ''}</div>`; return; }
   ({ nuevo: viewNuevo, planilla: viewPlanilla, resumen: viewResumen, precios: viewPrecios, ajustes: viewAjustes }[v] || viewNuevo)(main);
 }
 const catAviso = () => S.catOk ? '' : `<div class="warnbox">No pude leer los costos del cotizador${S.catErr ? ' (' + esc(S.catErr) + ')' : ''}. Los pedidos se cargan igual; el precio aparece cuando vuelva a estar disponible (botón ⟳).</div>`;
