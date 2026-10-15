@@ -263,7 +263,7 @@ function viewNuevo(main) {
           <label class="f">Fecha<input class="in" id="fFec" type="date" value="${hoy}"></label>
           <label class="f">Iniciales<input class="in" id="fIni"></label>
           <label class="f">Receta<input class="in" id="fRec"></label>
-          <label class="f">Forma de entrega<select class="in" id="fEnt"><option value="">— elegir —</option><option>Domicilio</option><option>Retira x Arce</option></select></label>
+          <label class="f">Forma de entrega<select class="in" id="fEnt"><option value="">(pendiente)</option><option>Domicilio</option><option>Retira x Arce</option></select></label>
           <label class="f">Despachado<select class="in" id="fDes">${['', 'Si', 'Si OCA', 'No'].map(x => `<option value="${x}">${x || '(pendiente)'}</option>`).join('')}</select></label>
           <label class="f">Plan<input class="in" id="fPlan"></label>
           <label class="f">AUT. RECETASOLIDARIA<input class="in" id="fAut"></label>
@@ -301,9 +301,9 @@ function viewNuevo(main) {
         + (dif.length ? ` <button class="btn sm" id="usarUlt" title="Completa con los datos del último pedido">Usar como el último: ${dif.map(([, v]) => esc(v)).join(' · ')}</button>` : '');
       if (dif.length) $('#usarUlt').onclick = () => { for (const [id, v] of dif) F(id).value = v; refresh(); };
     } else F('hist').innerHTML = nombre ? '<span class="pill ok">afiliado nuevo</span>' : '';
-    const ok = nombre && st.prod && F('fEnt').value;
+    const ok = nombre && st.prod;
     F('save').disabled = !ok;
-    F('saveMsg').textContent = ok ? 'Enter también guarda.' : !nombre ? 'Escribí el nombre.' : !st.prod ? 'Elegí la presentación.' : 'Elegí la forma de entrega.';
+    F('saveMsg').textContent = ok ? (F('fEnt').value ? 'Enter también guarda.' : 'La forma de entrega queda pendiente; la completás después en la Planilla.') : !nombre ? 'Escribí el nombre.' : 'Elegí la presentación.';
     renderPrice();
   };
   const onPerson = () => {
@@ -353,7 +353,7 @@ function viewNuevo(main) {
     const row = {
       numero: Number(F('fNum').value) || proxNumero(), fecha: F('fFec').value || null, afiliado: st.nombre,
       iniciales: clean(F('fIni').value).toUpperCase(), receta: clean(F('fRec').value), producto: pi.c ? pi.c.marca : clean(st.prod), codigo: pi.c?.codigo || null,
-      despachado: F('fDes').value || null, entrega: ent, plan: clean(F('fPlan').value) || null, aut: clean(F('fAut').value) || null,
+      despachado: F('fDes').value || null, entrega: ent || null, plan: clean(F('fPlan').value) || null, aut: clean(F('fAut').value) || null,
       costo: pi.costo, pvp: pi.pvp, precio: pi.precio, created_by: who(),
     };
     if (S.peds.some(p => p.numero === row.numero)) row.numero = proxNumero();
@@ -420,12 +420,13 @@ function viewPlanilla(main) {
       const des = nkey(p.despachado);
       return `<tr data-id="${p.id}"><td class="nw">${fdate(p.fecha) || '<span class="muted">—</span>'}</td><td class="n">${p.numero ?? ''}</td><td class="nw"><a href="#" class="ed">${esc(p.afiliado)}</a></td><td class="nw small">${esc(p.receta)}</td><td class="small" style="min-width:250px">${esc(clean(p.producto))}</td>
         <td><select class="cell des ${des.startsWith('SI') ? 'si' : des === 'NO' ? 'no' : ''}">${['', 'Si', 'Si OCA', 'No', ...(p.despachado && !['Si', 'Si OCA', 'No'].includes(p.despachado) ? [p.despachado] : [])].map(x => `<option value="${esc(x)}" ${x === (p.despachado || '') ? 'selected' : ''}>${x || '—'}</option>`).join('')}</select></td>
-        <td class="nw small">${esc(p.entrega)}</td><td class="nw small">${esc(p.plan)}</td><td class="nw small">${esc(p.aut)}</td>
+        <td><select class="cell ent ${p.entrega ? '' : 'no'}">${['', 'Domicilio', 'Retira x Arce', ...(p.entrega && !['Domicilio', 'Retira x Arce'].includes(p.entrega) ? [p.entrega] : [])].map(x => `<option value="${esc(x)}" ${x === (p.entrega || '') ? 'selected' : ''}>${x || 'pendiente'}</option>`).join('')}</select></td><td class="nw small">${esc(p.plan)}</td><td class="nw small">${esc(p.aut)}</td>
         <td class="n ${p.precio == null ? 'muted' : ''}">${money(pr)}</td><td class="n ${clsMargen(mg)}">${pct(mg)}</td><td class="nw"><button class="btn sm ed">Editar</button></td></tr>`;
     }).join('') || '<tr><td colspan="12" class="muted" style="padding:20px">Sin pedidos para este filtro.</td></tr>';
     $$('#tb tr[data-id]').forEach(tr => {
       const p = S.peds.find(x => x.id === +tr.dataset.id);
       $$('.ed', tr).forEach(a => a.onclick = e => { e.preventDefault(); editarPedido(p, () => draw()); });
+      $('.ent', tr).onchange = async e => { const v = e.target.value || null; try { Object.assign(p, await db.upd('ah_pedidos', p.id, { entrega: v })); toast('Guardado'); draw(); } catch (er) { toast('Error: ' + er.message); } };
       $('.des', tr).onchange = async e => { const v = e.target.value || null; try { Object.assign(p, await db.upd('ah_pedidos', p.id, { despachado: v })); toast('Guardado'); draw(); } catch (er) { toast('Error: ' + er.message); } };
     });
   };
@@ -451,7 +452,7 @@ function editarPedido(p, done) {
       <label class="f">Receta<input class="in" id="eRec" value="${esc(p.receta)}"></label>
       <label class="f">Producto<input class="in" id="ePro" value="${esc(clean(p.producto))}" list="dlP"></label>
       <label class="f">Despachado<input class="in" id="eDes" value="${esc(p.despachado)}" list="dlD"></label>
-      <label class="f">Forma de entrega<select class="in" id="eEnt">${['Domicilio', 'Retira x Arce', ''].map(x => `<option ${x === (p.entrega || '') ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+      <label class="f">Forma de entrega<select class="in" id="eEnt">${['', 'Domicilio', 'Retira x Arce'].map(x => `<option value="${x}" ${x === (p.entrega || '') ? 'selected' : ''}>${x || '(pendiente)'}</option>`).join('')}</select></label>
       <label class="f">Plan<input class="in" id="ePla" value="${esc(p.plan)}"></label>
       <label class="f">AUT.<input class="in" id="eAut" value="${esc(p.aut)}"></label>
       <label class="f">Precio a sacar<input class="in" id="ePre" type="number" step="0.01" value="${p.precio ?? ''}"></label>
