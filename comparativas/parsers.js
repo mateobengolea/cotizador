@@ -216,26 +216,29 @@
     return { estado: st || 'Sin dato', precio_total: null, marca: br.trim() };
   }
   async function parseActaPDF(pdfjs, data) {
-    const doc = await pdfjs.getDocument({ data, isEvalSupported: false, disableFontFace: true, useSystemFonts: false }).promise;
+    const doc = await pdfjs.getDocument({ data, isEvalSupported: false, disableFontFace: true, useSystemFonts: false, verbosity: 0 }).promise;
     const ren = new Map(); let titulo = '';
     for (let pn = 1; pn <= doc.numPages; pn++) {
       const pg = await doc.getPage(pn);
       const items = (await pg.getTextContent()).items.filter(i => i.str && i.str.trim())
-        .map(i => ({ s: i.str.trim(), x: i.transform[4], y: i.transform[5], w: i.width, cx: i.transform[4] + i.width / 2 }));
-      if (!titulo) { const t = items.find(i => /EXPTE/i.test(i.s)); if (t) titulo = t.s.replace(/^.*?(Cotizaci)/i, 'Pedido de $1'); }
-      const hItem = items.find(i => /^ITEM/i.test(i.s)); const hCR = items.find(i => /^C\.?R\.?$/i.test(i.s)); const hDesc = items.find(i => /^DESCRIPCION/i.test(i.s));
-      if (!hItem || !hCR) continue;
-      const Yh = hItem.y;
-      // encabezados de proveedores (pueden ocupar 2 líneas)
-      const hs = items.filter(i => i.x > hCR.x + hCR.w && i.y >= Yh - 1 && i.y <= Yh + 6 && !/COMPRE|NEUQUINO|ACTA COMPARATIVA/i.test(i.s)).sort((a, b) => a.cx - b.cx);
+        .map(i => ({ s: i.str.trim(), x: i.transform[4], y: i.transform[5], w: i.width, h: i.height || Math.abs(i.transform[3]) || 2, cx: i.transform[4] + i.width / 2 }));
+      if (!items.length) continue;
+      // todas las tolerancias van en proporción al tamaño de letra (las actas vienen en distintas escalas)
+      const hs = items.map(i => i.h).sort((p, q) => p - q); const H = hs[Math.floor(hs.length / 2)] || 2; const LG = H * 1.3;
+      if (!titulo) { const t = items.find(i => /EXPTE|Cotizaci[oó]n/i.test(i.s) && /\d{5,}/.test(i.s)); if (t) titulo = t.s.replace(/^.*?(Cotizaci)/i, 'Pedido de $1'); }
+      const hCR = items.find(i => /^C\.?R\.?$/i.test(i.s)); const hDesc = items.find(i => /^DESCRIPCI[OÓ]N$/i.test(i.s));
+      const hItem = items.find(i => /^ITEM/i.test(i.s));
+      if (!hCR) continue;
+      const Yh = hCR.y;                                    // línea base de los encabezados
+      const hdr = items.filter(i => i.x > hCR.x + hCR.w && i.y >= Yh - 0.5 * LG && i.y <= Yh + 2.6 * LG && !/COMPRE|NEUQUINO|ACTA COMPARATIVA|EXPEDIENTE|AFILIADO/i.test(i.s) && !/^\$|^\d+$|^\(|^NC$/.test(i.s)).sort((p, q) => p.cx - q.cx);
       const cols = [];
-      for (const h of hs) {
+      for (const h of hdr) {
         const c = cols.find(c => h.x < c.x1 && h.x + h.w > c.x0);
         if (c) { c.parts.push(h); c.x0 = Math.min(c.x0, h.x); c.x1 = Math.max(c.x1, h.x + h.w); } else cols.push({ x0: h.x, x1: h.x + h.w, parts: [h] });
       }
-      cols.forEach(c => { c.name = c.parts.sort((a, b) => b.y - a.y || a.x - b.x).map(p => p.s).join(' '); c.cx = (c.x0 + c.x1) / 2; });
-      cols.sort((a, b) => a.cx - b.cx);
-      // grupo compre neuquino
+      if (!cols.length) continue;
+      cols.forEach(c => { c.name = c.parts.sort((p, q) => q.y - p.y || p.x - q.x).map(p => p.s).join(' '); c.cx = (c.x0 + c.x1) / 2; });
+      cols.sort((p, q) => p.cx - q.cx);
       const gSin = items.find(i => /^SIN COMPRE/i.test(i.s)), gCon = items.find(i => /^CON COMPRE/i.test(i.s));
       let kCon = 0;
       if (gSin && gCon && cols.length > 1) {
@@ -247,12 +250,13 @@
       for (let i = 1; i < cols.length; i++) lim.push((cols[i - 1].cx + cols[i].cx) / 2);
       lim.push(Infinity);
       const colDe = cx => { for (let i = 0; i < cols.length; i++) if (cx >= lim[i] && cx < lim[i + 1]) return i; return -1; };
-      const xDescFin = (hDesc ? (hDesc.cx + hCR.cx) / 2 : hCR.x - 2);
-      // filas
-      const nums = items.filter(i => /^\d+$/.test(i.s) && i.y < Yh - 1 && i.x < (hDesc ? hDesc.x : hCR.x) - 1).sort((a, b) => b.y - a.y);
+      const xDescFin = hDesc ? (hDesc.cx + hCR.cx) / 2 : hCR.x - 2;
+      const xNumFin = hDesc ? hDesc.x - H * 0.3 : (hItem ? hItem.x + hItem.w + 4 * H : hCR.x - 1);
+      const yTop = Yh - 0.5 * LG;
+      const nums = items.filter(i => /^\d+$/.test(i.s) && i.y < yTop && i.x < xNumFin).sort((p, q) => q.y - p.y);
       for (let k = 0; k < nums.length; k++) {
-        const yb = nums[k].y - 1.2, yt = k ? nums[k - 1].y - 1.2 : Yh - 1.2;
-        const enFila = items.filter(i => i.y >= yb && i.y < yt).sort((a, b) => b.y - a.y || a.x - b.x);
+        const yb = nums[k].y - 0.6 * LG, yt = k ? nums[k - 1].y - 0.6 * LG : yTop;
+        const enFila = items.filter(i => i.y >= yb && i.y < yt).sort((p, q) => q.y - p.y || p.x - q.x);
         const desc = enFila.filter(i => i !== nums[k] && i.cx > nums[k].x + nums[k].w && i.cx < xDescFin).map(i => i.s).join(' ');
         const cr = enFila.find(i => i.cx >= xDescFin && i.cx < lim[0] && /^[\d.]+$/.test(i.s));
         const celdas = cols.map(() => []);
@@ -264,7 +268,7 @@
       }
     }
     if (!ren.size) throw new Error('No reconocí la grilla del acta en el PDF (¿es un PDF escaneado?).');
-    const m = titulo.match(/EXPTE\.?\s*(\d{5,7})/i);
+    const m = titulo.match(/EXPTE\.?\s*(\d{5,7})/i) || titulo.match(/\bE\s?(\d{6})\b/);
     return { titulo, proceso: m ? 'EXPTE ' + m[1] : '', renglones: [...ren.values()].sort((a, b) => a.renglon - b.renglon) };
   }
 

@@ -119,9 +119,11 @@ function intel(it) {
   const sim = (I.porMono.get(monoKey(it.monodroga)) || []).filter(r => !exIds.has(r.id) && r.item_id !== it.id && cotDeRen(r)?.id !== cotId).map(fila);
   const ord = (a, b) => String(b.fecha).localeCompare(String(a.fecha));
   ex.sort(ord); sim.sort(ord);
-  const actual = propias.find(x => x.a.unitComp) || null;
+  // Si ya está el acta de ESTA cotización, manda ella (aunque ningún competidor haya cotizado):
+  // no se usa el ganador de un proceso anterior para calcular el margen.
+  const actual = propias.find(x => x.a.unitComp) || propias.find(x => x.a.ofertasValidas) || propias[0] || null;
   const ultimo = ex.find(x => x.a.unitComp) || null;
-  return { propias, ex, sim, actual, ultimo, ref: actual || ultimo };
+  return { propias, ex, sim, actual, ultimo, ref: actual ? (actual.a.unitComp ? actual : null) : ultimo };
 }
 function margenParaGanar(it, unitComp) {
   if (!unitComp) return null;
@@ -309,7 +311,7 @@ function planCols(sin = []) {
       cls: v => v === 'IGUAL' ? 'ok' : v === 'ACTUALIZAR' ? 'warn b' : v === '¿ESPECIAL?' ? 'bad' : 'g', titleOf: (v, r) => { const x = L(r); return x.ca != null && x.cc ? `Costo actual vs cotizado: ${x.ca > x.cc ? '+' : ''}${pct(x.ca / x.cc - 1)}${x.raro ? ' — diferencia muy grande, probable costo especial: no se usa en los cálculos' : ''}` : ''; } },
     { key: 'r_act', title: 'R [%] con costo actual', w: 76, type: 'pct', live: 1, get: r => { const x = L(r); return x.ca != null && !x.raro && r.precio_unit ? 1 - x.ca / r.precio_unit : null; }, fmt: pc2, cls: v => clsMargen(v), formula: (n, C) => `=1-${C('costo_act')}${n}/${C('precio_unit')}${n}` },
     { key: 'pos', title: 'Posición en acta', w: 72, type: N, live: 1, get: r => L(r).act ? L(r).act.posicion : null, fmt: (v, r) => v ? `${v}° de ${L(r).act.ofertasValidas}` : (L(r).act ? 'no cotiz.' : ''), cls: v => v === 1 ? 'ok b' : v ? 'bad' : '' },
-    { key: 'mejor', title: 'Mejor competidor', w: 140, type: T, live: 1, get: r => { const a = L(r).act; return a && a.mejorComp ? P.canonProv(a.mejorComp.proveedor) : ''; } },
+    { key: 'mejor', title: 'Mejor competidor', w: 140, type: T, live: 1, get: r => { const a = L(r).act; return a ? (a.mejorComp ? P.canonProv(a.mejorComp.proveedor) : 'Sin competencia') : ''; }, cls: v => v === 'Sin competencia' ? 'ok' : '', titleOf: v => v === 'Sin competencia' ? 'En el acta de este proceso ningún otro proveedor cotizó este renglón' : '' },
     { key: 'marca_comp', title: 'Marca competidor', w: 130, type: T, live: 1, get: r => { const a = L(r).act; return a && a.mejorComp ? a.mejorComp.marca || '' : ''; } },
     { key: 'unit_comp', title: 'Unit. competidor', w: 100, type: N, live: 1, get: r => L(r).act ? L(r).act.unitComp : null, fmt: n0 },
     { key: 'dif', title: 'Dif. vs competidor', w: 76, type: 'pct', live: 1, get: r => { const a = L(r).act; return a && a.unitComp && r.precio_unit ? r.precio_unit / a.unitComp - 1 : null; }, fmt: v => v == null ? '' : (v > 0 ? '+' : '') + pct(v), cls: v => v == null ? '' : v > 0 ? 'bad' : 'ok' },
