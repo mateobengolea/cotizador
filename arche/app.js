@@ -394,6 +394,10 @@ function sugBox(inp, box, fn, pick) {
 // ======================================================================
 //  PLANILLA
 // ======================================================================
+const esSi = v => nkey(v).startsWith('SI');
+// cuando un pedido pasa de pendiente a "Si" se guarda el momento (despachado_at); si vuelve a pendiente se borra
+const despPatch = (p, v) => { const patch = { despachado: v }; if (esSi(v) && !esSi(p.despachado)) patch.despachado_at = new Date().toISOString(); else if (!esSi(v) && p.despachado_at) patch.despachado_at = null; return patch; };
+const diaLocal = ts => { if (!ts) return ''; const d = new Date(ts); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const PF = { mes: null, q: '', desp: '', dia: '' };   // desp: '' todos | 'pend' solo sin despachar | 'ok' ocultar sin despachar
 function viewPlanilla(main) {
   if ((location.hash.split('/')[1] || '') === 'pend') { PF.desp = 'pend'; history.replaceState(null, '', '#planilla'); }
@@ -403,23 +407,26 @@ function viewPlanilla(main) {
   <div class="row" style="margin-bottom:10px"><h1>Planilla</h1><span class="sub" id="cnt"></span><span class="spacer"></span>
     <input class="in" id="q" placeholder="Buscar afiliado, receta, producto…" value="${esc(PF.q)}" style="width:260px">
     <span class="row" style="gap:4px"><input class="in" type="date" id="dia" value="${PF.dia}" title="Ver un solo día"><button class="btn sm" id="hoy">Hoy</button>${PF.dia ? '<button class="btn sm" id="sinDia" title="Quitar el filtro de día">✕</button>' : ''}</span>
-    <select class="in" id="desp">${[['', 'Todos (despachados y sin despachar)'], ['pend', 'Solo sin despachar'], ['ok', 'Ocultar sin despachar']].map(([k, l]) => `<option value="${k}" ${PF.desp === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <select class="in" id="desp">${[['', 'Todos (despachados y sin despachar)'], ['pend', 'Solo sin despachar'], ['ok', 'Ocultar sin despachar'], ['conf', 'Confirmados en el día (pasaron a Si)']].map(([k, l]) => `<option value="${k}" ${PF.desp === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
     <button class="btn" id="xls">Exportar a Excel</button><a class="btn pri" href="#nuevo">＋ Nuevo pedido</a></div>
   <div class="tabsm">${[['', 'Todos'], ...meses.map(m => [m || 'none', m ? MES3[Number(m.slice(5)) - 1] + '-' + m.slice(2, 4) : 'Sin fecha'])].map(([k, l]) => `<a href="#" data-m="${k}" class="${!PF.dia && PF.mes === k ? 'on' : ''}">${l}</a>`).join('')}</div>
   <div class="tw"><table class="t"><thead><tr><th>Fecha</th><th class="n">N°</th><th>Afiliado</th><th>Receta</th><th>Producto</th><th>Despachado</th><th>Entrega</th><th>Plan</th><th>AUT.</th><th class="n">Precio a sacar</th><th class="n">Margen</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
   <p class="small muted">El precio queda guardado tal como estaba el día del pedido. Los pedidos sin precio (importados) muestran el de hoy en gris.</p>`;
   const draw = () => {
     const f = fold(PF.q);
-    const rows = S.peds.filter(p => (!PF.dia || p.fecha === PF.dia) && (PF.dia || !PF.mes || (PF.mes === 'none' ? !p.fecha : (p.fecha || '').startsWith(PF.mes))) && (!PF.desp || (PF.desp === 'pend') === !nkey(p.despachado).startsWith('SI'))
+    const diaConf = PF.dia || hoyISO();
+    const rows = S.peds.filter(p => (PF.desp === 'conf'
+        ? esSi(p.despachado) && diaLocal(p.despachado_at) === diaConf
+        : (!PF.dia || p.fecha === PF.dia) && (PF.dia || !PF.mes || (PF.mes === 'none' ? !p.fecha : (p.fecha || '').startsWith(PF.mes))) && (!PF.desp || (PF.desp === 'pend') === !esSi(p.despachado)))
       && (!f || fold([p.afiliado, p.receta, p.producto, p.numero].join(' ')).includes(f)))
       .sort((a, b) => (b.numero ?? 0) - (a.numero ?? 0));
-    $('#cnt').textContent = rows.length + ' pedidos';
+    $('#cnt').textContent = rows.length + ' pedidos' + (PF.desp === 'conf' ? ` confirmados el ${fdate(diaConf)}${PF.dia ? '' : ' (hoy)'} · elegí otro día en el calendario` : '');
     $('#tb').innerHTML = rows.map(p => {
       const vivo = p.precio == null ? precioInfo(p.producto, p.codigo) : null;
       const pr = p.precio ?? vivo?.precio; const mg = p.precio != null ? (p.costo != null && p.precio ? 1 - p.costo / p.precio : null) : vivo?.margen;
       const des = nkey(p.despachado);
       return `<tr data-id="${p.id}"><td class="nw">${fdate(p.fecha) || '<span class="muted">—</span>'}</td><td class="n">${p.numero ?? ''}</td><td class="nw"><a href="#" class="ed">${esc(p.afiliado)}</a></td><td class="nw small">${esc(p.receta)}</td><td class="small" style="min-width:250px">${esc(clean(p.producto))}</td>
-        <td><select class="cell des ${des.startsWith('SI') ? 'si' : des === 'NO' ? 'no' : ''}">${['', 'Si', 'Si OCA', 'No', ...(p.despachado && !['Si', 'Si OCA', 'No'].includes(p.despachado) ? [p.despachado] : [])].map(x => `<option value="${esc(x)}" ${x === (p.despachado || '') ? 'selected' : ''}>${x || '—'}</option>`).join('')}</select></td>
+        <td title="${p.despachado_at ? 'Confirmado el ' + fdate(diaLocal(p.despachado_at)) + ' ' + new Date(p.despachado_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : ''}"><select class="cell des ${des.startsWith('SI') ? 'si' : des === 'NO' ? 'no' : ''}">${['', 'Si', 'Si OCA', 'No', ...(p.despachado && !['Si', 'Si OCA', 'No'].includes(p.despachado) ? [p.despachado] : [])].map(x => `<option value="${esc(x)}" ${x === (p.despachado || '') ? 'selected' : ''}>${x || '—'}</option>`).join('')}</select></td>
         <td><select class="cell ent ${p.entrega ? '' : 'no'}">${['', 'Domicilio', 'Retira x Arce', ...(p.entrega && !['Domicilio', 'Retira x Arce'].includes(p.entrega) ? [p.entrega] : [])].map(x => `<option value="${esc(x)}" ${x === (p.entrega || '') ? 'selected' : ''}>${x || 'pendiente'}</option>`).join('')}</select></td><td class="nw small">${esc(p.plan)}</td><td class="nw small">${esc(p.aut)}</td>
         <td class="n ${p.precio == null ? 'muted' : ''}">${money(pr)}</td><td class="n ${clsMargen(mg)}">${pct(mg)}</td><td class="nw"><button class="btn sm ed">Editar</button></td></tr>`;
     }).join('') || '<tr><td colspan="12" class="muted" style="padding:20px">Sin pedidos para este filtro.</td></tr>';
@@ -427,7 +434,7 @@ function viewPlanilla(main) {
       const p = S.peds.find(x => x.id === +tr.dataset.id);
       $$('.ed', tr).forEach(a => a.onclick = e => { e.preventDefault(); editarPedido(p, () => draw()); });
       $('.ent', tr).onchange = async e => { const v = e.target.value || null; try { Object.assign(p, await db.upd('ah_pedidos', p.id, { entrega: v })); toast('Guardado'); draw(); } catch (er) { toast('Error: ' + er.message); } };
-      $('.des', tr).onchange = async e => { const v = e.target.value || null; try { Object.assign(p, await db.upd('ah_pedidos', p.id, { despachado: v })); toast('Guardado'); draw(); } catch (er) { toast('Error: ' + er.message); } };
+      $('.des', tr).onchange = async e => { const v = e.target.value || null; try { Object.assign(p, await db.upd('ah_pedidos', p.id, despPatch(p, v))); toast('Guardado'); draw(); } catch (er) { toast('Error: ' + er.message); } };
     });
   };
   $('#q').oninput = e => { PF.q = e.target.value; draw(); };
@@ -473,6 +480,7 @@ function editarPedido(p, done) {
     const patch = { numero: Number($('#eNum', ov).value) || null, fecha: $('#eFec', ov).value || null, afiliado: v('#eAfi'), iniciales: (v('#eIni') || '').toUpperCase() || null, receta: v('#eRec'),
       producto: v('#ePro'), despachado: v('#eDes'), entrega: v('#eEnt'), plan: v('#ePla'), aut: v('#eAut'), precio: num($('#ePre', ov).value), obs: v('#eObs') };
     if (!patch.afiliado) return toast('Falta el afiliado');
+    Object.assign(patch, despPatch(p, patch.despachado));
     if (nkey(patch.producto) !== nkey(p.producto) || ov._pi) { const pi = ov._pi || precioInfo(patch.producto); patch.codigo = pi.c?.codigo || null; patch.costo = pi.costo; patch.pvp = pi.pvp; if (!ov._pi && $('#ePre', ov).value === String(p.precio ?? '')) patch.precio = pi.precio; }
     try { Object.assign(p, await db.upd('ah_pedidos', p.id, patch)); reindex(); toast('Pedido guardado'); close(); done && done(); } catch (e) { toast('Error: ' + e.message, 5000); }
   };
