@@ -77,6 +77,7 @@ td.zero{color:var(--line)}
 .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
 select.cell{border:1px solid transparent;background:transparent;border-radius:5px;padding:2px 4px;cursor:pointer}
 select.cell:hover{border-color:var(--line)}
+select.cell:disabled{cursor:not-allowed;opacity:1;-webkit-appearance:none;appearance:none;background:none}
 select.cell.si{color:var(--ok);font-weight:600} select.cell.no{color:var(--bad)}
 input.cell{border:1px solid transparent;background:transparent;border-radius:5px;padding:3px 5px;width:100%;min-width:120px}
 input.cell:hover{border-color:var(--line)} input.cell:focus{border-color:var(--brand2);background:var(--panel);outline:none}
@@ -133,6 +134,6 @@ input.cell:hover{border-color:var(--line)} input.cell:focus{border-color:var(--b
 <script src="config.js"></script>
 <script src="lib/supabase.js"></script>
 <script src="lib/xlsx.full.min.js"></script>
-<script src="app.js?v=20261016d"></script>
+<script src="app.js?v=20261016e"></script>
 </body>
 </html>

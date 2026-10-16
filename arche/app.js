@@ -441,18 +441,18 @@ function viewPlanilla(main) {
       const pr = p.precio ?? vivo?.precio; const mg = p.precio != null ? (p.costo != null && p.precio ? 1 - p.costo / p.precio : null) : vivo?.margen;
       const des = nkey(p.despachado);
       return `<tr data-id="${p.id}"><td class="nw">${fdate(p.fecha) || '<span class="muted">—</span>'}</td><td class="n">${p.numero ?? ''}</td><td class="nw"><a href="#" class="ed">${esc(p.afiliado)}</a></td><td class="nw small">${esc(p.receta)}</td><td class="small" style="min-width:250px">${esc(clean(p.producto))}</td>
-        <td title="${p.despachado_at ? 'Confirmado el ' + fdate(diaLocal(p.despachado_at)) + ' ' + new Date(p.despachado_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : ''}"><select class="cell des ${des.startsWith('SI') ? 'si' : des === 'NO' ? 'no' : ''}">${['', 'Si', 'Si OCA', 'No', ...(p.despachado && !['Si', 'Si OCA', 'No'].includes(p.despachado) ? [p.despachado] : [])].map(x => `<option value="${esc(x)}" ${x === (p.despachado || '') ? 'selected' : ''}>${x || '—'}</option>`).join('')}</select></td>
-        <td><select class="cell ent ${p.entrega ? '' : 'no'}">${['', 'Domicilio', 'Retira x Arce', ...(p.entrega && !['Domicilio', 'Retira x Arce'].includes(p.entrega) ? [p.entrega] : [])].map(x => `<option value="${esc(x)}" ${x === (p.entrega || '') ? 'selected' : ''}>${x || 'pendiente'}</option>`).join('')}</select></td><td class="nw small">${esc(p.plan)}</td><td class="nw small">${esc(p.aut)}</td>
+        <td title="${p.despachado_at ? 'Confirmado el ' + fdate(diaLocal(p.despachado_at)) + ' ' + new Date(p.despachado_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : ''}"><select ${esAdmin() ? 'disabled title="Administración no puede cambiar el despacho" ' : ''}class="cell des ${des.startsWith('SI') ? 'si' : des === 'NO' ? 'no' : ''}">${['', 'Si', 'Si OCA', 'No', ...(p.despachado && !['Si', 'Si OCA', 'No'].includes(p.despachado) ? [p.despachado] : [])].map(x => `<option value="${esc(x)}" ${x === (p.despachado || '') ? 'selected' : ''}>${x || '—'}</option>`).join('')}</select></td>
+        <td><select ${esAdmin() ? 'disabled title="Administración no puede cambiar la forma de entrega" ' : ''}class="cell ent ${p.entrega ? '' : 'no'}">${['', 'Domicilio', 'Retira x Arce', ...(p.entrega && !['Domicilio', 'Retira x Arce'].includes(p.entrega) ? [p.entrega] : [])].map(x => `<option value="${esc(x)}" ${x === (p.entrega || '') ? 'selected' : ''}>${x || 'pendiente'}</option>`).join('')}</select></td><td class="nw small">${esc(p.plan)}</td><td class="nw small">${esc(p.aut)}</td>
         <td class="n ${p.precio == null ? 'muted' : ''}">${money(pr)}</td><td class="n ${clsMargen(mg)}">${pct(mg)}</td><td class="nw"><button class="btn sm ed">Editar</button></td><td class="nw">${p.presentado_at ? `<span class="pill ok" title="Marcado ${p.presentado_by ? 'por ' + esc(p.presentado_by) + ' ' : ''}el ${fdate(diaLocal(p.presentado_at))} ${new Date(p.presentado_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}">✔ ${fdate(diaLocal(p.presentado_at))}</span> <button class="btn sm pres-x" title="Desmarcar">✕</button>` : '<button class="btn sm pres">Marcar</button>'}</td></tr>`;
     }).join('') || '<tr><td colspan="13" class="muted" style="padding:20px">Sin pedidos para este filtro.</td></tr>';
     $$('#tb tr[data-id]').forEach(tr => {
       const p = S.peds.find(x => x.id === +tr.dataset.id);
       $$('.ed', tr).forEach(a => a.onclick = e => { e.preventDefault(); editarPedido(p, () => draw()); });
-      $('.ent', tr).onchange = async e => { const v = e.target.value || null; try { Object.assign(p, await db.upd('ah_pedidos', p.id, { entrega: v })); toast('Guardado'); draw(); } catch (er) { toast('Error: ' + er.message); } };
+      if (!esAdmin()) $('.ent', tr).onchange = async e => { const v = e.target.value || null; try { Object.assign(p, await db.upd('ah_pedidos', p.id, { entrega: v })); toast('Guardado'); draw(); } catch (er) { toast('Error: ' + er.message); } };
       const setPres = async patch => { try { Object.assign(p, await db.upd('ah_pedidos', p.id, patch)); toast(patch.presentado_at ? 'Marcado como presentado' : 'Presentado desmarcado'); draw(); } catch (er) { toast('Error: ' + er.message, 5000); } };
       if ($('.pres', tr)) $('.pres', tr).onclick = () => setPres({ presentado_at: new Date().toISOString(), presentado_by: who() });
       if ($('.pres-x', tr)) $('.pres-x', tr).onclick = () => { if (confirm(`¿Desmarcar "Presentado" del pedido N° ${p.numero}?`)) setPres({ presentado_at: null, presentado_by: null }); };
-      $('.des', tr).onchange = async e => { const v = e.target.value || null; try { Object.assign(p, await db.upd('ah_pedidos', p.id, despPatch(p, v))); toast('Guardado'); draw(); } catch (er) { toast('Error: ' + er.message); } };
+      if (!esAdmin()) $('.des', tr).onchange = async e => { const v = e.target.value || null; try { Object.assign(p, await db.upd('ah_pedidos', p.id, despPatch(p, v))); toast('Guardado'); draw(); } catch (er) { toast('Error: ' + er.message); } };
     });
   };
   $('#q').oninput = e => { PF.q = e.target.value; draw(); };
@@ -479,8 +479,8 @@ function editarPedido(p, done) {
       <label class="f">Iniciales<input class="in" id="eIni" value="${esc(p.iniciales)}"></label>
       <label class="f">Receta<input class="in" id="eRec" value="${esc(p.receta)}"></label>
       <label class="f">Producto<input class="in" id="ePro" value="${esc(clean(p.producto))}" list="dlP"></label>
-      <label class="f">Despachado<input class="in" id="eDes" value="${esc(p.despachado)}" list="dlD"></label>
-      <label class="f">Forma de entrega<select class="in" id="eEnt">${['', 'Domicilio', 'Retira x Arce'].map(x => `<option value="${x}" ${x === (p.entrega || '') ? 'selected' : ''}>${x || '(pendiente)'}</option>`).join('')}</select></label>
+      <label class="f">Despachado<input class="in" id="eDes" value="${esc(p.despachado)}" list="dlD" ${esAdmin() ? 'disabled' : ''}></label>
+      <label class="f">Forma de entrega<select class="in" id="eEnt" ${esAdmin() ? 'disabled' : ''}>${['', 'Domicilio', 'Retira x Arce'].map(x => `<option value="${x}" ${x === (p.entrega || '') ? 'selected' : ''}>${x || '(pendiente)'}</option>`).join('')}</select></label>
       <label class="f">Plan<input class="in" id="ePla" value="${esc(p.plan)}"></label>
       <label class="f">AUT.<input class="in" id="eAut" value="${esc(p.aut)}"></label>
       <label class="f">Precio a sacar<input class="in" id="ePre" type="number" step="0.01" value="${p.precio ?? ''}"></label>
@@ -502,7 +502,7 @@ function editarPedido(p, done) {
     const patch = { numero: Number($('#eNum', ov).value) || null, fecha: $('#eFec', ov).value || null, afiliado: v('#eAfi'), iniciales: (v('#eIni') || '').toUpperCase() || null, receta: v('#eRec'),
       producto: v('#ePro'), despachado: v('#eDes'), entrega: v('#eEnt'), plan: v('#ePla'), aut: v('#eAut'), precio: num($('#ePre', ov).value), obs: v('#eObs') };
     if (!patch.afiliado) return toast('Falta el afiliado');
-    Object.assign(patch, despPatch(p, patch.despachado));
+    if (esAdmin()) { delete patch.despachado; delete patch.entrega; } else Object.assign(patch, despPatch(p, patch.despachado));
     const pres = $('#ePres', ov).value;
     if (pres !== diaLocal(p.presentado_at)) Object.assign(patch, pres ? { presentado_at: new Date(pres + 'T12:00:00').toISOString(), presentado_by: who() } : { presentado_at: null, presentado_by: null });
     if (nkey(patch.producto) !== nkey(p.producto) || ov._pi) { const pi = ov._pi || precioInfo(patch.producto); patch.codigo = pi.c?.codigo || null; patch.costo = pi.costo; patch.pvp = pi.pvp; if (!ov._pi && $('#ePre', ov).value === String(p.precio ?? '')) patch.precio = pi.precio; }
