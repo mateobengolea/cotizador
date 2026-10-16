@@ -32,19 +32,22 @@ const TABLES = ['ah_pedidos', 'ah_config'];
 let sb = null;
 const db = DEMO ? (() => {
   const mem = {}; let seq = Date.now() % 100000;
-  for (const t of [...TABLES, 'ah_roles']) { try { mem[t] = JSON.parse(localStorage.getItem('ahdemo_' + t) || '[]'); } catch { mem[t] = []; } }
+  for (const t of [...TABLES, 'ah_roles', 'ah_log']) { try { mem[t] = JSON.parse(localStorage.getItem('ahdemo_' + t) || '[]'); } catch { mem[t] = []; } }
   const save = t => { try { localStorage.setItem('ahdemo_' + t, JSON.stringify(mem[t])); } catch { /* lleno */ } };
+  const dlog = (tabla, accion, registro, detalle) => { mem.ah_log.push({ id: ++seq, ts: new Date().toISOString(), usuario: S.user?.email + (esAdmin() ? ' (adm)' : ''), tabla, accion, registro: String(registro ?? ''), detalle }); save('ah_log'); };
   return {
     async all(t) { return mem[t].map(r => ({ ...r })); },
-    async ins(t, rows) { const out = rows.map(r => ({ ...r, id: r.id ?? ++seq, created_at: new Date().toISOString() })); mem[t].push(...out); save(t); return out.map(r => ({ ...r })); },
-    async upd(t, id, patch) { const r = mem[t].find(x => x.id === id); Object.assign(r, patch); save(t); return { ...r }; },
-    async del(t, col, vals) { const s = new Set(vals); mem[t] = mem[t].filter(x => !s.has(x[col])); save(t); },
+    async log(desde, n) { return mem.ah_log.slice().sort((a, b) => b.id - a.id).slice(desde, desde + n); },
+    async ins(t, rows) { const out = rows.map(r => ({ ...r, id: r.id ?? ++seq, created_at: new Date().toISOString() })); mem[t].push(...out); save(t); if (t === 'ah_pedidos') { out.forEach(r => dlog(t, 'alta', r.numero, r)); } return out.map(r => ({ ...r })); },
+    async upd(t, id, patch) { const r = mem[t].find(x => x.id === id); const d = {}; for (const k in patch) if (JSON.stringify(r[k] ?? null) !== JSON.stringify(patch[k] ?? null)) d[k] = [r[k] ?? null, patch[k] ?? null]; if (t === 'ah_pedidos' && Object.keys(d).length) dlog(t, 'cambio', r.numero, d); Object.assign(r, patch); save(t); return { ...r }; },
+    async del(t, col, vals) { const s = new Set(vals); if (t === 'ah_pedidos') mem[t].filter(x => s.has(x[col])).forEach(r => dlog(t, 'baja', r.numero, r)); mem[t] = mem[t].filter(x => !s.has(x[col])); save(t); },
     async ups(t, rows, keys) { for (const r of rows) { const k = keys.map(x => r[x]).join('|'); const e = mem[t].find(x => keys.map(y => x[y]).join('|') === k); if (e) Object.assign(e, r); else mem[t].push({ id: ++seq, ...r }); } save(t); },
   };
 })() : (() => {
   const chunk = (a, n) => { const o = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
   const chk = ({ data, error }) => { if (error) { const e = new Error(error.message); e.code = error.code; throw e; } return data; };
   return {
+    async log(desde, n) { return chk(await sb.from('ah_log').select('*').order('id', { ascending: false }).range(desde, desde + n - 1)); },
     async all(t) { let out = [], i = 0; for (;;) { const d = chk(await sb.from(t).select('*').order({ ah_config: 'clave', ah_roles: 'email' }[t] || 'id').range(i, i + 999)); out = out.concat(d); if (d.length < 1000) return out; i += 1000; } },
     async ins(t, rows) { let out = []; for (const c of chunk(rows, 500)) out = out.concat(chk(await sb.from(t).insert(c).select())); return out; },
     async upd(t, id, patch) { return chk(await sb.from(t).update(patch).eq('id', id).select())[0]; },
@@ -204,11 +207,11 @@ const proxNumero = () => S.peds.reduce((m, p) => Math.max(m, p.numero || 0), 0) 
 const DUENO = 'mbengolea@meta.com.ar';   // único usuario que asigna perfiles
 const esDueno = () => (S.user?.email || '').toLowerCase() === DUENO || (DEMO && !esAdmin());
 const esAdmin = () => S.rol === 'administracion';   // Administración: todo menos Nuevo pedido
-const VIEWS = [['nuevo', 'Nuevo pedido'], ['planilla', 'Planilla'], ['resumen', 'Resumen'], ['precios', 'Precios'], ['ajustes', 'Importar / Ajustes']];
+const VIEWS = [['nuevo', 'Nuevo pedido'], ['planilla', 'Planilla'], ['resumen', 'Resumen'], ['precios', 'Precios'], ['ajustes', 'Importar / Ajustes'], ['actividad', 'Actividad']];
 function shell(active) {
   $('#app').innerHTML = `
   <header class="top"><div class="logo">Arche Salud<small>${esc(conf('cliente'))}</small></div>
-    <nav>${VIEWS.filter(([k]) => !(esAdmin() && k === 'nuevo')).map(([k, l]) => `<a href="#${k}" class="${k === active ? 'on' : ''}">${esAdmin() && k === 'ajustes' ? 'Ajustes' : l}</a>`).join('')}</nav>
+    <nav>${VIEWS.filter(([k]) => !(esAdmin() && k === 'nuevo') && (k !== 'actividad' || esDueno())).map(([k, l]) => `<a href="#${k}" class="${k === active ? 'on' : ''}">${esAdmin() && k === 'ajustes' ? 'Ajustes' : l}</a>`).join('')}</nav>
     <div class="who">${DEMO ? '<span class="demo-badge" title="Los datos quedan solo en este navegador">MODO DEMO</span>' : ''}
       <a class="ext" href="../" title="Volver al cotizador">Cotizador</a>
       ${esAdmin() ? '<span class="pill" style="background:rgba(255,255,255,.18);color:#fff">Administración</span>' : ''}<span>${esc(S.user?.email || '')}</span><button id="reload" title="Traer lo último">⟳</button>${DEMO ? '' : '<button id="logout">Salir</button>'}</div></header>
@@ -238,10 +241,11 @@ async function start() {
 function route() {
   let v = (location.hash.slice(1) || (esAdmin() ? 'planilla' : 'nuevo')).split('/')[0];
   if (esAdmin() && (v === 'nuevo' || !['planilla', 'resumen', 'precios', 'ajustes'].includes(v))) v = 'planilla';
+  if (v === 'actividad' && !esDueno()) v = esAdmin() ? 'planilla' : 'nuevo';
   $$('.overlay').forEach(o => o.remove());
   const main = shell(v);
   if (S.faltaSchema) { main.innerHTML = `<div class="card"><h2>Falta crear las tablas</h2><p>Entrá a Supabase → proyecto <b>Cotizador</b> → <b>SQL Editor</b>, pegá el contenido de <code>arche/schema.sql</code> y tocá <b>Run</b>. Después recargá esta página.</p>${S.schemaErr ? `<p class="small muted">Detalle técnico: <code>${esc(S.schemaErr)}</code></p>` : ''}</div>`; return; }
-  ({ nuevo: viewNuevo, planilla: viewPlanilla, resumen: viewResumen, precios: viewPrecios, ajustes: viewAjustes }[v] || (esAdmin() ? viewPlanilla : viewNuevo))(main);
+  ({ nuevo: viewNuevo, planilla: viewPlanilla, resumen: viewResumen, precios: viewPrecios, ajustes: viewAjustes, actividad: viewActividad }[v] || (esAdmin() ? viewPlanilla : viewNuevo))(main);
 }
 const catAviso = () => S.catOk ? '' : `<div class="warnbox">No pude leer los costos del cotizador${S.catErr ? ' (' + esc(S.catErr) + ')' : ''}. Los pedidos se cargan igual; el precio aparece cuando vuelva a estar disponible (botón ⟳).</div>`;
 
@@ -586,6 +590,70 @@ function viewPrecios(main) {
   draw();
 }
 async function setConf(k, v) { await db.ups('ah_config', [{ clave: k, valor: v }], ['clave']); S.cfg[k] = v; }
+
+// ======================================================================
+//  ACTIVIDAD (registro de cambios; solo lo ve mbengolea@meta.com.ar)
+// ======================================================================
+const CAMPOS = { numero: 'N° pedido', fecha: 'Fecha', afiliado: 'Afiliado', iniciales: 'Iniciales', receta: 'Receta', producto: 'Producto', codigo: 'Código', despachado: 'Despachado',
+  despachado_at: 'Confirmado el', entrega: 'Entrega', plan: 'Plan', aut: 'AUT.', costo: 'Costo', pvp: 'PVP', precio: 'Precio', obs: 'Obs.', presentado_at: 'Presentado', presentado_by: 'Presentado por', created_by: 'Cargado por', rol: 'Perfil', email: 'Email', valor: 'Valor' };
+const OCULTOS = new Set(['id', 'created_at', 'updated_at', 'presentado_by', 'created_by', 'despachado_at']);
+const LA = { st: { usu: '', acc: '', desde: '', hasta: '', q: '' }, rows: [], fin: false };
+function fmtVal(k, v) {
+  if (v == null || v === '') return '<span class="muted">vacío</span>';
+  if (/_at$/.test(k)) return esc(fdate(diaLocal(v)) + ' ' + new Date(v).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
+  if (k === 'fecha') return esc(fdate(v));
+  if (['costo', 'pvp', 'precio'].includes(k)) return esc(money(Number(v)));
+  return esc(typeof v === 'object' ? JSON.stringify(v) : clean(v));
+}
+async function viewActividad(main) {
+  main.innerHTML = `<div class="row" style="margin-bottom:6px"><h1>Actividad</h1><span class="sub" id="cnt"></span><span class="spacer"></span>
+    <select class="in" id="aUsu"></select>
+    <select class="in" id="aAcc"><option value="">Todas las acciones</option><option value="alta">Altas</option><option value="cambio">Cambios</option><option value="baja">Bajas</option></select>
+    <span class="row" style="gap:4px"><span class="small muted">Desde</span><input class="in" type="date" id="aDesde"><span class="small muted">hasta</span><input class="in" type="date" id="aHasta"></span>
+    <input class="in" id="aQ" placeholder="N° de pedido o afiliado…" style="width:200px"></div>
+    <p class="sub" style="margin:0 0 12px">Registro de todo lo que se carga, cambia o borra en los pedidos (y en perfiles y ajustes). Solo lo ves vos.</p>
+    <div class="tw"><table class="t"><thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Acción</th><th>Pedido</th><th>Afiliado</th><th>Qué cambió</th></tr></thead><tbody id="tb"><tr><td colspan="6" class="muted" style="padding:20px"><span class="spin"></span> Cargando…</td></tr></tbody></table></div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="mas">Cargar más</button></div>`;
+  const st = LA.st;
+  ['aDesde', 'aHasta', 'aQ'].forEach(id => $('#' + id).value = st[{ aDesde: 'desde', aHasta: 'hasta', aQ: 'q' }[id]]);
+  $('#aAcc').value = st.acc;
+  const afiDe = r => { if (r.tabla !== 'ah_pedidos') return ''; const d = r.detalle || {}; const a = Array.isArray(d.afiliado) ? d.afiliado[1] || d.afiliado[0] : d.afiliado; return a || S.peds.find(p => String(p.numero) === r.registro)?.afiliado || ''; };
+  const que = r => {
+    const d = r.detalle || {};
+    if (r.accion === 'cambio') return Object.entries(d).filter(([k]) => !['updated_at', 'presentado_by'].includes(k)).map(([k, [a, b]]) => `<div><b>${esc(CAMPOS[k] || k)}</b>: ${fmtVal(k, a)} → ${fmtVal(k, b)}</div>`).join('');
+    if (r.tabla === 'ah_pedidos') return `<span class="small">${esc(clean(d.producto))}${d.entrega ? ' · ' + esc(d.entrega) : ''}${d.despachado ? ' · Desp.: ' + esc(d.despachado) : ''}</span>`;
+    return `<span class="small">${Object.entries(d).filter(([k]) => !OCULTOS.has(k)).map(([k, v]) => esc(CAMPOS[k] || k) + ': ' + fmtVal(k, v)).join(' · ')}</span>`;
+  };
+  const QUIEN = { ah_pedidos: '', ah_roles: 'Perfil', ah_config: 'Ajuste' };
+  const draw = () => {
+    const usuarios = [...new Set(LA.rows.map(r => r.usuario))].sort();
+    $('#aUsu').innerHTML = '<option value="">Todos los usuarios</option>' + usuarios.map(u => `<option ${u === st.usu ? 'selected' : ''}>${esc(u)}</option>`).join('');
+    const f = fold(st.q);
+    const rows = LA.rows.filter(r => (!st.usu || r.usuario === st.usu) && (!st.acc || r.accion === st.acc)
+      && (!st.desde || diaLocal(r.ts) >= st.desde) && (!st.hasta || diaLocal(r.ts) <= st.hasta)
+      && (!f || fold(r.registro + ' ' + afiDe(r)).includes(f)));
+    $('#cnt').textContent = rows.length + ' movimientos' + (LA.fin ? '' : ' (de los últimos ' + LA.rows.length + ' cargados)');
+    $('#tb').innerHTML = rows.map(r => `<tr><td class="nw">${fmtVal('ts_at', r.ts)}</td><td class="nw small">${esc(r.usuario)}</td>
+      <td><span class="pill ${r.accion === 'alta' ? 'ok' : r.accion === 'baja' ? 'bad' : 'info'}">${{ alta: 'Alta', cambio: 'Cambio', baja: 'Baja' }[r.accion] || esc(r.accion)}</span></td>
+      <td class="nw">${QUIEN[r.tabla] ? `<span class="muted small">${QUIEN[r.tabla]}</span> ` : ''}${esc(r.registro)}</td><td class="nw">${esc(afiDe(r))}</td><td>${que(r)}</td></tr>`).join('')
+      || '<tr><td colspan="6" class="muted" style="padding:20px">Sin movimientos para este filtro.</td></tr>';
+    $('#mas').style.display = LA.fin ? 'none' : '';
+  };
+  const cargar = async (reset) => {
+    try {
+      if (reset) { LA.rows = []; LA.fin = false; }
+      const n = 500; const d = await db.log(LA.rows.length, n);
+      LA.rows = LA.rows.concat(d); if (d.length < n) LA.fin = true; draw();
+    } catch (e) { $('#tb').innerHTML = `<tr><td colspan="6" style="padding:20px" class="bad">${/ah_log|schema cache|does not exist/i.test(e.message) ? 'Falta correr el SQL de actividad en Supabase.' : 'Error: ' + esc(e.message)}</td></tr>`; }
+  };
+  $('#aUsu').onchange = e => { st.usu = e.target.value; draw(); };
+  $('#aAcc').onchange = e => { st.acc = e.target.value; draw(); };
+  $('#aDesde').onchange = e => { st.desde = e.target.value; draw(); };
+  $('#aHasta').onchange = e => { st.hasta = e.target.value; draw(); };
+  $('#aQ').oninput = e => { st.q = e.target.value; draw(); };
+  $('#mas').onclick = () => cargar(false);
+  await cargar(true);
+}
 
 // ======================================================================
 //  IMPORTAR / AJUSTES / EXPORTAR
