@@ -45,7 +45,7 @@ const db = DEMO ? (() => {
   const chunk = (a, n) => { const o = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
   const chk = ({ data, error }) => { if (error) { const e = new Error(error.message); e.code = error.code; throw e; } return data; };
   return {
-    async all(t) { let out = [], i = 0; for (;;) { const d = chk(await sb.from(t).select('*').order(t === 'ah_config' ? 'clave' : 'id').range(i, i + 999)); out = out.concat(d); if (d.length < 1000) return out; i += 1000; } },
+    async all(t) { let out = [], i = 0; for (;;) { const d = chk(await sb.from(t).select('*').order({ ah_config: 'clave', ah_roles: 'email' }[t] || 'id').range(i, i + 999)); out = out.concat(d); if (d.length < 1000) return out; i += 1000; } },
     async ins(t, rows) { let out = []; for (const c of chunk(rows, 500)) out = out.concat(chk(await sb.from(t).insert(c).select())); return out; },
     async upd(t, id, patch) { return chk(await sb.from(t).update(patch).eq('id', id).select())[0]; },
     async del(t, col, vals) { for (const c of chunk(vals, 300)) chk(await sb.from(t).delete().in(col, c)); },
