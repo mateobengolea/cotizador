@@ -51,16 +51,52 @@ const db = DEMO ? (() => {
 // ======================================================================
 //  Estado e índices
 // ======================================================================
-const S = { user: null, loaded: false, cots: [], items: [], costos: [], cargas: [], comps: [], rens: [], ofs: [], cfg: {}, ocs: [], ocItems: [] };
+const S = { user: null, loaded: false, cots: [], items: [], costos: [], cargas: [], comps: [], rens: [], ofs: [], cfg: {}, ocs: [], ocItems: [], cat: [], cot: null };
 const I = {};
 const CFG_DEF = { margenObjetivo: 0.04, cercania: 0.03 };
 const conf = k => (S.cfg[k] ?? CFG_DEF[k]);
 
+// ---------- Costos directos del cotizador (misma base Supabase, tabla kv_store, solo lectura) ----------
+const KV_PRECIOS = 'cotizador:precios-por-lista', KV_BASE = 'cotizador:base-marcas';
+async function cargarCostosCotizador() {
+  if (DEMO) return null;
+  try {
+    const url = CFG.SUPABASE_URL.replace(/\/$/, '') + '/rest/v1/kv_store?select=key,value,updated_at&key=in.(' + encodeURIComponent('"' + KV_PRECIOS + '","' + KV_BASE + '"') + ')';
+    const r = await fetch(url, { headers: { apikey: CFG.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + CFG.SUPABASE_ANON_KEY } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const rows = await r.json();
+    const pre = rows.find(x => x.key === KV_PRECIOS), base = rows.find(x => x.key === KV_BASE);
+    const lista = pre && Array.isArray(pre.value) ? pre.value : [];
+    const cat = base && Array.isArray(base.value) ? base.value : [];
+    return { lista, cat, updated: pre ? pre.updated_at : null, updatedBase: base ? base.updated_at : null, ok: lista.length > 0 };
+  } catch (e) { console.warn('Costos del cotizador:', e.message); return { ok: false, error: e.message, lista: [], cat: [] }; }
+}
+function armarCatalogo() {
+  // Une: precios por lista del cotizador (fuente principal) + datos del catálogo del cotizador + costos manuales como respaldo
+  const usar = conf('fuenteCostos') !== 'manual' && S.cot && S.cot.ok;
+  const man = new Map(); for (const c of S.costos) man.set(c.codigo + '|' + c.lista, c);
+  const manCod = new Map(); for (const c of S.costos) if (!manCod.has(c.codigo)) manCod.set(c.codigo, c);
+  if (!usar) { S.cat = S.costos; return; }
+  const base = new Map(); for (const b of S.cot.cat) if (b && b.codigo != null) base.set(String(b.codigo).trim(), b);
+  const out = [], vistos = new Set();
+  for (const p of S.cot.lista) {
+    if (!p || p.codigo == null || !p.lista) continue;
+    const codigo = String(p.codigo).trim(), lista = String(p.lista).trim();
+    const b = base.get(codigo) || {}, m = man.get(codigo + '|' + lista) || manCod.get(codigo) || {};
+    vistos.add(codigo + '|' + lista);
+    out.push({ codigo, lista, detalle: b.marca || m.detalle || '', monodroga: b.monodroga || m.monodroga || '', laboratorio: b.laboratorio || m.laboratorio || '',
+      pvp: b.pvp ?? m.pvp ?? null, psl: p.psl ?? null, dtocpa: p.descuento ?? null, costo: p.costo, stockCot: b.stock ?? null, actualizado: S.cot.updated, fuente: 'cotizador' });
+  }
+  for (const c of S.costos) if (!vistos.has(c.codigo + '|' + c.lista)) out.push({ ...c, fuente: 'manual' });
+  S.cat = out;
+}
 async function loadAll() {
   const opcional = new Set(['cc_ocs', 'cc_oc_items']);   // tablas nuevas: si todavía no se corrió schema.sql, la app igual arranca
   const [cots, items, costos, cargas, comps, rens, ofs, cfg, ocs, ocItems] = await Promise.all(TABLES.map(t => opcional.has(t) ? db.all(t).catch(() => { S.faltaSchema = true; return []; }) : db.all(t)));
   Object.assign(S, { cots, items, costos, cargas, comps, rens, ofs, ocs, ocItems, loaded: true });
   S.cfg = Object.fromEntries(cfg.map(r => [r.clave, r.valor]));
+  S.cot = await cargarCostosCotizador();
+  armarCatalogo();
   reindex();
 }
 function reindex() {
@@ -79,7 +115,7 @@ function reindex() {
   I.rensByItem = by(S.rens.filter(r => r.item_id), 'item_id');
   I.ofsByRen = by(S.ofs, 'renglon_id');
   I.costo = new Map(); I.costoCod = new Map();
-  for (const c of S.costos) { I.costo.set(c.codigo + '|' + c.lista, c); if (!I.costoCod.has(c.codigo)) I.costoCod.set(c.codigo, c); }
+  for (const c of (S.cat.length ? S.cat : S.costos)) { I.costo.set(c.codigo + '|' + c.lista, c); if (!I.costoCod.has(c.codigo)) I.costoCod.set(c.codigo, c); }
   // análisis por renglón + índices de inteligencia competitiva
   I.ana = new Map(); I.porCodigo = new Map(); I.porMono = new Map(); if (typeof LM !== 'undefined') LM.clear();
   for (const r of S.rens) {
@@ -307,6 +343,7 @@ function planCols(sin = []) {
     { key: 'adjudicado', title: 'Adj.', w: 46, type: T, edit: 1, get: r => r.adjudicado == null ? '' : r.adjudicado ? 'Sí' : 'No', cls: v => v === 'Sí' ? 'ok b' : v === 'No' ? 'bad' : '', tip: 'Sí / No' },
     // ---- en vivo ----
     { key: 'costo_act', title: 'Costo actual', w: 100, type: N, live: 1, get: r => L(r).ca, fmt: (v, r) => v == null ? '' : L(r).raro ? `<span class="g">${nf2.format(v)}</span>` : nf2.format(v), tip: 'Costo META con los costos cargados hoy' },
+    { key: 'stock_cot', title: 'Stock (cotizador)', w: 70, type: N, live: 1, get: r => { const k = costoRow(r); return k && k.stockCot != null ? k.stockCot : null; }, fmt: n0, tip: 'Stock del catálogo del cotizador' },
     { key: 'control', title: 'Control costo', w: 92, type: T, live: 1, get: r => { const x = L(r); if (x.ca == null) return 'SIN DATO'; if (x.raro) return '¿ESPECIAL?'; return x.cc && Math.abs(x.ca / x.cc - 1) > 0.0005 ? 'ACTUALIZAR' : 'IGUAL'; },
       cls: v => v === 'IGUAL' ? 'ok' : v === 'ACTUALIZAR' ? 'warn b' : v === '¿ESPECIAL?' ? 'bad' : 'g', titleOf: (v, r) => { const x = L(r); return x.ca != null && x.cc ? `Costo actual vs cotizado: ${x.ca > x.cc ? '+' : ''}${pct(x.ca / x.cc - 1)}${x.raro ? ' — diferencia muy grande, probable costo especial: no se usa en los cálculos' : ''}` : ''; } },
     { key: 'r_act', title: 'R [%] con costo actual', w: 76, type: 'pct', live: 1, get: r => { const x = L(r); return x.ca != null && !x.raro && r.precio_unit ? 1 - x.ca / r.precio_unit : null; }, fmt: pc2, cls: v => clsMargen(v), formula: (n, C) => `=1-${C('costo_act')}${n}/${C('precio_unit')}${n}` },
@@ -699,7 +736,7 @@ function agregarRenglon(c) {
   };
   const busca = () => {
     const q = P.norm($('#qq', o).value); if (q.length < 2) { $('#res', o).innerHTML = ''; return; }
-    const hits = S.costos.filter(k => P.norm(k.codigo + ' ' + k.detalle + ' ' + k.monodroga).includes(q)).slice(0, 40);
+    const hits = S.cat.filter(k => P.norm(k.codigo + ' ' + k.detalle + ' ' + k.monodroga).includes(q)).slice(0, 40);
     $('#res', o).innerHTML = `<div class="tw" style="max-height:50vh"><table class="t"><tr><th>Código</th><th>Producto</th><th>Lista</th><th class="n">Costo</th></tr>${hits.map((k, i) => `<tr class="click" data-k="${i}"><td>${esc(k.codigo)}</td><td>${esc(k.detalle)}<div class="small muted">${esc(k.monodroga)} · ${esc(k.laboratorio)}</div></td><td>${esc(k.lista)}</td><td class="n">${money(k.costo)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Sin resultados en costos cargados.</td></tr>'}</table></div>`;
     $$('tr[data-k]', o).forEach(tr => tr.onclick = () => { const k = hits[+tr.dataset.k]; nuevo({ codigo: k.codigo, lista: k.lista, detalle: k.detalle, monodroga: k.monodroga, laboratorio: k.laboratorio, pvp: k.pvp, psl: k.psl, dtocpa: k.dtocpa, costo: k.costo }); });
   };
@@ -769,7 +806,7 @@ function candidatosPedido() {
   // descripciones de actas ya vinculadas a un renglón nuestro
   for (const r of S.rens) { if (!r.item_id) continue; const it = I.item.get(r.item_id); if (!it || !it.codigo) continue; const k = P.norm(r.descripcion); const f = fechaRen(r); const x = porDesc.get(k); if (!x || f > x.fecha) porDesc.set(k, { ...it, fecha: f, fuente: 'cliente' }); }
   const base = [...hist.values()];
-  for (const k of S.costos) if (!hist.has(k.codigo)) base.push({ ...k, fuente: 'costos' });
+  const ya = new Set(); for (const k of S.cat) if (!hist.has(k.codigo) && !ya.has(k.codigo)) { ya.add(k.codigo); base.push({ ...k, fuente: 'costos' }); }
   return { base, cli, porDesc };
 }
 function sugerirRenglon(r, C) {
@@ -1119,7 +1156,7 @@ function vBuscar() {
   if (q.length >= 2) {
     const prods = new Map();
     for (const it of S.items) if (P.norm(it.codigo + ' ' + it.detalle + ' ' + it.monodroga).includes(q)) { const k = it.codigo || it.detalle; if (!prods.has(k)) prods.set(k, []); prods.get(k).push(it); }
-    for (const k of S.costos) if (!prods.has(k.codigo) && P.norm(k.codigo + ' ' + k.detalle + ' ' + k.monodroga).includes(q)) prods.set(k.codigo, [{ ...k, id: -1, _soloCosto: true }]);
+    for (const k of S.cat) if (!prods.has(k.codigo) && P.norm(k.codigo + ' ' + k.detalle + ' ' + k.monodroga).includes(q)) prods.set(k.codigo, [{ ...k, id: -1, _soloCosto: true }]);
     const rensSueltos = S.rens.filter(r => !r.item_id && P.norm(r.descripcion).includes(q));
     html = `<div class="tw"><table class="t"><thead><tr><th>Producto</th><th class="n">Veces cotizado</th><th class="n">Último precio nuestro</th><th class="n">Costo actual</th><th>Último mejor competidor</th><th class="n">Unit. comp.</th><th class="n">Margen p/ganar hoy</th></tr></thead><tbody>
     ${[...prods.values()].slice(0, 150).map(arr => {
@@ -1148,17 +1185,24 @@ function vBuscar() {
 // ======================================================================
 let qCost = '';
 function vCostos() {
-  const porLista = {}; for (const c of S.costos) { const l = c.lista || '(sin lista)'; porLista[l] = porLista[l] || { n: 0, f: '' }; porLista[l].n++; if (c.actualizado > porLista[l].f) porLista[l].f = c.actualizado; }
+  const porLista = {}; for (const c of S.cat) { const l = c.lista || '(sin lista)'; porLista[l] = porLista[l] || { n: 0, f: '' }; porLista[l].n++; if (c.actualizado > porLista[l].f) porLista[l].f = c.actualizado; }
   const q = P.norm(qCost);
-  const hits = q.length >= 2 ? S.costos.filter(k => P.norm(k.codigo + ' ' + k.detalle + ' ' + k.monodroga + ' ' + k.laboratorio).includes(q)).slice(0, 300) : [];
+  const hits = q.length >= 2 ? S.cat.filter(k => P.norm(k.codigo + ' ' + k.detalle + ' ' + k.monodroga + ' ' + k.laboratorio).includes(q)).slice(0, 300) : [];
+  const fCot = S.cot && S.cot.updated ? new Date(S.cot.updated).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+  const usandoCot = S.cot && S.cot.ok && conf('fuenteCostos') !== 'manual';
   shell(`<h1>Costos vigentes</h1><div class="sub" style="margin-bottom:12px">Se usan para el “costo actual” y el “margen p/ganar” de todas las pantallas.</div>
-  <div class="card"><div class="drop" id="drop"><b>Cargar archivo de costos</b><br><span class="small">Excel o CSV con columnas CODIGO y COSTO (y si están: LISTA/LISTAPRE, DETALLE, MONODROGA, LABORATORIO, PVP, PSL, DTOCPA). Detecta la fila de encabezados sola.</span></div></div>
+  <div class="card"><div class="row"><div><b>Fuente: ${usandoCot ? 'Cotizador (automático)' : 'Carga manual'}</b>
+    <div class="small muted">${S.cot && S.cot.ok ? `Precios por lista del cotizador: ${nf0.format(S.cot.lista.length)} · última carga en el cotizador: <b>${fCot}</b> — se leen solos al abrir la página y con ⟳.` : S.cot && S.cot.error ? `No pude leer los costos del cotizador (${esc(S.cot.error)}).` : DEMO ? 'En modo demo no se conecta al cotizador.' : 'El cotizador todavía no tiene precios por lista cargados.'}
+    ${usandoCot ? '<br>Los códigos o listas que no estén en el cotizador se completan con la carga manual (si hay).' : ''}</div></div><span class="spacer"></span>
+    ${S.cot && S.cot.ok ? `<label class="small row" style="gap:6px"><input type="checkbox" id="fuenteCot" ${usandoCot ? 'checked' : ''}> Usar costos del cotizador</label>` : ''}</div></div>
+  <details class="card"><summary class="small" style="cursor:pointer"><b>Carga manual de costos</b> (respaldo, normalmente no hace falta)</summary><div style="margin-top:10px"><div class="drop" id="drop"><b>Cargar archivo de costos</b><br><span class="small">Excel o CSV con columnas CODIGO y COSTO (y si están: LISTA/LISTAPRE, DETALLE, MONODROGA, LABORATORIO, PVP, PSL, DTOCPA). Detecta la fila de encabezados sola.</span></div></div></details>
   <div class="kpis">${Object.entries(porLista).map(([l, v]) => `<div class="kpi"><div class="l">${esc(l)}</div><div class="v">${nf0.format(v.n)}</div><div class="s">act. ${v.f ? new Date(v.f).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</div></div>`).join('') || '<div class="kpi"><div class="l">Sin costos cargados</div><div class="v">0</div></div>'}</div>
   <div class="row" style="margin-bottom:10px"><input class="in" id="q" placeholder="Buscar código, producto, monodroga, laboratorio…" value="${esc(qCost)}" style="width:min(420px,100%)"><span class="spacer"></span>
     <span class="small muted">Últimas cargas: ${S.cargas.slice(-3).reverse().map(c => `${esc(c.archivo)} (${nf0.format(c.filas)} filas, ${new Date(c.created_at).toLocaleDateString('es-AR')}${c.usuario ? ', ' + esc(c.usuario) : ''})`).join(' · ') || '—'}</span></div>
   ${q.length >= 2 ? `<div class="tw"><table class="t"><thead><tr><th>Código</th><th>Producto</th><th>Monodroga</th><th>Laboratorio</th><th>Lista</th><th class="n">PVP</th><th class="n">PSL</th><th class="n">Dto.</th><th class="n">Costo</th></tr></thead><tbody>
     ${hits.map(k => `<tr><td>${esc(k.codigo)}</td><td>${esc(k.detalle)}</td><td>${esc(k.monodroga)}</td><td class="small">${esc(k.laboratorio)}</td><td>${esc(k.lista)}</td><td class="n">${money(k.pvp)}</td><td class="n">${money(k.psl)}</td><td class="n">${k.dtocpa ?? ''}</td><td class="n"><b>${money(k.costo)}</b></td></tr>`).join('') || '<tr><td colspan="9" class="muted">Sin resultados.</td></tr>'}</tbody></table></div>` : ''}`);
   dropZone($('#drop'), '.xlsx,.xls,.csv', cargarCostos);
+  if ($('#fuenteCot')) $('#fuenteCot').onchange = async e => { await db.ups('cc_config', [{ clave: 'fuenteCostos', valor: e.target.checked ? 'cotizador' : 'manual' }], ['clave']); S.cfg.fuenteCostos = e.target.checked ? 'cotizador' : 'manual'; armarCatalogo(); reindex(); vCostos(); toast('Fuente de costos actualizada'); };
   const inp = $('#q'); let h; inp.oninput = () => { clearTimeout(h); h = setTimeout(() => { qCost = inp.value; vCostos(); const n = $('#q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 200); };
 }
 async function cargarCostos(file) {
@@ -1210,7 +1254,7 @@ function vResumen() {
   <div class="kpis"><div class="kpi"><div class="l">Renglones cotizados con resultado</div><div class="v">${conAna.length}</div></div>
     <div class="kpi"><div class="l">Salimos 1°</div><div class="v ok">${gan.length}</div><div class="s">${conAna.length ? pct(gan.length / conAna.length, 0) : ''}</div></div>
     <div class="kpi"><div class="l">Perdidos por &lt; ${pct(conf('cercania'), 0)}</div><div class="v warn">${cerca.length}</div><div class="s">los más fáciles de dar vuelta</div></div>
-    <div class="kpi"><div class="l">Costos cargados</div><div class="v">${nf0.format(S.costos.length)}</div></div></div>
+    <div class="kpi"><div class="l">Costos cargados</div><div class="v">${nf0.format(S.cat.length)}</div><div class="s">${S.cot && S.cot.ok && conf('fuenteCostos') !== 'manual' ? 'del cotizador' : 'carga manual'}</div></div></div>
   <div class="card"><h2>Quién nos gana</h2><div class="tw" style="max-height:none"><table class="t"><tr><th>Competidor</th><th class="n">Ofertas vistas</th><th>Veces que fue mejor que nosotros</th><th class="n">Por cuánto (mediana)</th></tr>
   ${lista.slice(0, 25).map(c => `<tr><td><b>${esc(c.n)}</b></td><td class="n">${c.ofertas}</td><td><div class="row" style="gap:8px;flex-wrap:nowrap"><div class="bar" style="width:160px"><i style="width:${100 * c.nosGana / maxN}%"></i></div>${c.nosGana}</div></td><td class="n">${c.dif.length ? pct(med(c.dif)) : '—'}</td></tr>`).join('')}</table></div>
   <p class="legend">“Por cuánto”: cuánto más caro estuvo nuestro precio unitario respecto del suyo, en los renglones que perdimos contra él.</p></div>
@@ -1258,7 +1302,7 @@ async function previewHistorico(file) {
   $('#prev').innerHTML = `<div class="card" style="margin-top:12px;box-shadow:none"><p><b>${A.cotizaciones.length}</b> procesos en el Excel → <b>${nuevas.length}</b> nuevos (${nIt} renglones), ${A.cotizaciones.length - nuevas.length} ya cargados.</p>
     <p>Hojas OC: ${A.ocOk} renglones marcados como adjudicados.${A.avisos.map(a => `<br><span class="warn small">${esc(a)}</span>`).join('')}</p>
     <p>Hoja COMPARATIVAS: ${A.hist.length} resultados de ${procsHist.length} procesos → ${histNuevos.length} por importar.</p>
-    <p>Costos (hoja ${esc(C.hoja || '—')}): ${C.filas.length} productos <label class="row" style="display:inline-flex"><input type="checkbox" id="wc" ${S.costos.length ? '' : 'checked'}> importarlos también</label></p>
+    <p>Costos (hoja ${esc(C.hoja || '—')}): ${C.filas.length} productos <label class="row" style="display:inline-flex"><input type="checkbox" id="wc" ${S.costos.length || (S.cot && S.cot.ok) ? '' : 'checked'}> importarlos también</label></p>
     <button class="btn pri" id="go" ${nuevas.length || histNuevos.length || C.filas.length ? '' : 'disabled'}>Importar</button> <span id="st" class="small"></span></div>`;
   $('#go').onclick = async () => {
     const st = m => $('#st').innerHTML = '<span class="spin"></span> ' + m;

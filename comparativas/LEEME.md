@@ -51,7 +51,7 @@ En el repo `mateobengolea/cotizador` creá una carpeta `comparativas/` y subí t
    
    Si se vuelve a correr no duplica nada: los procesos que ya existen se saltean.
 3. **Comparativas →** arrastrá el PDF del acta. Se lee directo, sin convertirlo antes, y se vincula sola con la cotización por número de expediente.
-4. **Costos →** arrastrá el archivo de costos del día. Detecta solas las columnas CODIGO, COSTO, LISTA/LISTAPRE, PSL, PVP, DTOCPA, etc. Sirve `precios_combinado.csv`, el `PRECIOS.XLSX` crudo o la hoja VLOOKUP.
+4. **Costos**: se toman **solos del cotizador** (los precios por lista que se suben ahí cada día con `precios_combinado.csv`, más marca, laboratorio, PVP y stock de la Base de marcas). Se leen al abrir la página y con ⟳; no hace falta cargar nada acá. La carga manual queda como respaldo: arrastrá el archivo de costos del día. Detecta solas las columnas CODIGO, COSTO, LISTA/LISTAPRE, PSL, PVP, DTOCPA, etc. Sirve `precios_combinado.csv`, el `PRECIOS.XLSX` crudo o la hoja VLOOKUP.
 
 > Si `config.js` queda vacío, la página arranca en **modo demo**: los datos se guardan solo en ese navegador. Sirve para probar sin tocar la base.
 
