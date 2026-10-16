@@ -65,6 +65,8 @@ table.t tr:hover td{background:rgba(22,122,112,.05)}
 table.t tr.click{cursor:pointer}
 table.t th.sticky1,table.t td.sticky1{position:sticky;left:0;background:var(--panel);z-index:1}
 table.t th.sticky1{z-index:3;background:var(--brand-soft)}
+table.t.pres-r tr > :last-child{position:sticky;right:0;background:var(--panel);box-shadow:-1px 0 0 var(--line);z-index:1}
+table.t.pres-r thead tr > :last-child{background:var(--brand-soft);z-index:3}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 td.c,th.c{text-align:center}
 td.nw{white-space:nowrap}
@@ -131,6 +133,6 @@ input.cell:hover{border-color:var(--line)} input.cell:focus{border-color:var(--b
 <script src="config.js"></script>
 <script src="lib/supabase.js"></script>
 <script src="lib/xlsx.full.min.js"></script>
-<script src="app.js?v=20261016a"></script>
+<script src="app.js?v=20261016b"></script>
 </body>
 </html>

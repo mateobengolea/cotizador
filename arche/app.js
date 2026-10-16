@@ -201,6 +201,8 @@ const proxNumero = () => S.peds.reduce((m, p) => Math.max(m, p.numero || 0), 0) 
 // ======================================================================
 //  Shell, login y ruteo
 // ======================================================================
+const DUENO = 'mbengolea@meta.com.ar';   // único usuario que asigna perfiles
+const esDueno = () => (S.user?.email || '').toLowerCase() === DUENO || (DEMO && !esAdmin());
 const esAdmin = () => S.rol === 'administracion';   // Administración: todo menos Nuevo pedido
 const VIEWS = [['nuevo', 'Nuevo pedido'], ['planilla', 'Planilla'], ['resumen', 'Resumen'], ['precios', 'Precios'], ['ajustes', 'Importar / Ajustes']];
 function shell(active) {
@@ -403,7 +405,9 @@ const esSi = v => nkey(v).startsWith('SI');
 // cuando un pedido pasa de pendiente a "Si" se guarda el momento (despachado_at); si vuelve a pendiente se borra
 const despPatch = (p, v) => { const patch = { despachado: v }; if (esSi(v) && !esSi(p.despachado)) patch.despachado_at = new Date().toISOString(); else if (!esSi(v) && p.despachado_at) patch.despachado_at = null; return patch; };
 const diaLocal = ts => { if (!ts) return ''; const d = new Date(ts); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
-const PF = { mes: null, q: '', desp: '', dia: '', pres: '' };   // desp: '' todos | 'pend' solo sin despachar | 'ok' ocultar sin despachar
+// rango de fechas de la Planilla: solo "desde" = ese día en adelante; solo "hasta" = hasta ese día; ambos iguales = un día
+const rango = () => (PF.desde || PF.hasta) ? [PF.desde || '0000-01-01', PF.hasta || PF.desde && '9999-12-31' || PF.hasta] : null;
+const PF = { mes: null, q: '', desp: '', desde: '', hasta: '', pres: '' };   // desp: '' todos | 'pend' solo sin despachar | 'ok' ocultar sin despachar
 function viewPlanilla(main) {
   if ((location.hash.split('/')[1] || '') === 'pend') { PF.desp = 'pend'; history.replaceState(null, '', '#planilla'); }
   const meses = [...new Set(S.peds.map(p => (p.fecha || '').slice(0, 7)))].sort().reverse();
@@ -411,23 +415,24 @@ function viewPlanilla(main) {
   main.innerHTML = `
   <div class="row" style="margin-bottom:10px"><h1>Planilla</h1><span class="sub" id="cnt"></span><span class="spacer"></span>
     <input class="in" id="q" placeholder="Buscar afiliado, receta, producto…" value="${esc(PF.q)}" style="width:260px">
-    <span class="row" style="gap:4px"><input class="in" type="date" id="dia" value="${PF.dia}" title="Ver un solo día"><button class="btn sm" id="hoy">Hoy</button>${PF.dia ? '<button class="btn sm" id="sinDia" title="Quitar el filtro de día">✕</button>' : ''}</span>
+    <span class="row" style="gap:4px"><span class="small muted">Desde</span><input class="in" type="date" id="desde" value="${PF.desde}"><span class="small muted">hasta</span><input class="in" type="date" id="hasta" value="${PF.hasta}" title="Para un solo día, la misma fecha en las dos"><button class="btn sm" id="hoy">Hoy</button>${rango() ? '<button class="btn sm" id="sinDia" title="Quitar el filtro de fechas">✕</button>' : ''}</span>
     <select class="in" id="desp">${[['', 'Todos (despachados y sin despachar)'], ['pend', 'Solo sin despachar'], ['ok', 'Ocultar sin despachar'], ['conf', 'Confirmados en el día (pasaron a Si)']].map(([k, l]) => `<option value="${k}" ${PF.desp === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
     <select class="in" id="pres">${[['', 'Presentado: todos'], ['no', 'Sin presentar'], ['si', 'Presentados']].map(([k, l]) => `<option value="${k}" ${PF.pres === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
     <button class="btn" id="xls">Exportar a Excel</button>${esAdmin() ? '' : '<a class="btn pri" href="#nuevo">＋ Nuevo pedido</a>'}</div>
-  <div class="tabsm">${[['', 'Todos'], ...meses.map(m => [m || 'none', m ? MES3[Number(m.slice(5)) - 1] + '-' + m.slice(2, 4) : 'Sin fecha'])].map(([k, l]) => `<a href="#" data-m="${k}" class="${!PF.dia && PF.mes === k ? 'on' : ''}">${l}</a>`).join('')}</div>
-  <div class="tw"><table class="t"><thead><tr><th>Fecha</th><th class="n">N°</th><th>Afiliado</th><th>Receta</th><th>Producto</th><th>Despachado</th><th>Entrega</th><th>Plan</th><th>AUT.</th><th>Presentado</th><th class="n">Precio a sacar</th><th class="n">Margen</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
+  <div class="tabsm">${[['', 'Todos'], ...meses.map(m => [m || 'none', m ? MES3[Number(m.slice(5)) - 1] + '-' + m.slice(2, 4) : 'Sin fecha'])].map(([k, l]) => `<a href="#" data-m="${k}" class="${!rango() && PF.mes === k ? 'on' : ''}">${l}</a>`).join('')}</div>
+  <div class="tw"><table class="t pres-r"><thead><tr><th>Fecha</th><th class="n">N°</th><th>Afiliado</th><th>Receta</th><th>Producto</th><th>Despachado</th><th>Entrega</th><th>Plan</th><th>AUT.</th><th class="n">Precio a sacar</th><th class="n">Margen</th><th></th><th>Presentado</th></tr></thead><tbody id="tb"></tbody></table></div>
   <p class="small muted">El precio queda guardado tal como estaba el día del pedido. Los pedidos sin precio (importados) muestran el de hoy en gris.</p>`;
   const draw = () => {
     const f = fold(PF.q);
-    const diaConf = PF.dia || hoyISO();
+    const [d1, d2] = rango() || [hoyISO(), hoyISO()];
+    const enRango = d => !!d && d >= d1 && d <= d2;
     const rows = S.peds.filter(p => (PF.desp === 'conf'
-        ? esSi(p.despachado) && diaLocal(p.despachado_at) === diaConf
-        : (!PF.dia || p.fecha === PF.dia) && (PF.dia || !PF.mes || (PF.mes === 'none' ? !p.fecha : (p.fecha || '').startsWith(PF.mes))) && (!PF.desp || (PF.desp === 'pend') === !esSi(p.despachado)))
+        ? esSi(p.despachado) && enRango(diaLocal(p.despachado_at))
+        : (!rango() || enRango(p.fecha)) && (rango() || !PF.mes || (PF.mes === 'none' ? !p.fecha : (p.fecha || '').startsWith(PF.mes))) && (!PF.desp || (PF.desp === 'pend') === !esSi(p.despachado)))
       && (!PF.pres || (PF.pres === 'si') === !!p.presentado_at)
       && (!f || fold([p.afiliado, p.receta, p.producto, p.numero].join(' ')).includes(f)))
       .sort((a, b) => (b.numero ?? 0) - (a.numero ?? 0));
-    $('#cnt').textContent = rows.length + ' pedidos' + (PF.desp === 'conf' ? ` confirmados el ${fdate(diaConf)}${PF.dia ? '' : ' (hoy)'} · elegí otro día en el calendario` : '');
+    $('#cnt').textContent = rows.length + ' pedidos' + (PF.desp === 'conf' ? ` confirmados ${d1 === d2 ? 'el ' + fdate(d1) + (rango() ? '' : ' (hoy)') : (!PF.desde ? 'hasta el ' + fdate(d2) : 'del ' + fdate(d1) + ' al ' + fdate(d2))} · cambiá las fechas para ver otro período` : rango() ? ` · ${d1 === d2 ? fdate(d1) : !PF.desde ? 'hasta el ' + fdate(d2) : !PF.hasta ? 'desde el ' + fdate(d1) : fdate(d1) + ' al ' + fdate(d2)}` : '');
     $('#tb').innerHTML = rows.map(p => {
       const vivo = p.precio == null ? precioInfo(p.producto, p.codigo) : null;
       const pr = p.precio ?? vivo?.precio; const mg = p.precio != null ? (p.costo != null && p.precio ? 1 - p.costo / p.precio : null) : vivo?.margen;
@@ -435,8 +440,7 @@ function viewPlanilla(main) {
       return `<tr data-id="${p.id}"><td class="nw">${fdate(p.fecha) || '<span class="muted">—</span>'}</td><td class="n">${p.numero ?? ''}</td><td class="nw"><a href="#" class="ed">${esc(p.afiliado)}</a></td><td class="nw small">${esc(p.receta)}</td><td class="small" style="min-width:250px">${esc(clean(p.producto))}</td>
         <td title="${p.despachado_at ? 'Confirmado el ' + fdate(diaLocal(p.despachado_at)) + ' ' + new Date(p.despachado_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : ''}"><select class="cell des ${des.startsWith('SI') ? 'si' : des === 'NO' ? 'no' : ''}">${['', 'Si', 'Si OCA', 'No', ...(p.despachado && !['Si', 'Si OCA', 'No'].includes(p.despachado) ? [p.despachado] : [])].map(x => `<option value="${esc(x)}" ${x === (p.despachado || '') ? 'selected' : ''}>${x || '—'}</option>`).join('')}</select></td>
         <td><select class="cell ent ${p.entrega ? '' : 'no'}">${['', 'Domicilio', 'Retira x Arce', ...(p.entrega && !['Domicilio', 'Retira x Arce'].includes(p.entrega) ? [p.entrega] : [])].map(x => `<option value="${esc(x)}" ${x === (p.entrega || '') ? 'selected' : ''}>${x || 'pendiente'}</option>`).join('')}</select></td><td class="nw small">${esc(p.plan)}</td><td class="nw small">${esc(p.aut)}</td>
-        <td class="nw">${p.presentado_at ? `<span class="pill ok" title="Marcado ${p.presentado_by ? 'por ' + esc(p.presentado_by) + ' ' : ''}el ${fdate(diaLocal(p.presentado_at))} ${new Date(p.presentado_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}">✔ ${fdate(diaLocal(p.presentado_at))}</span> <button class="btn sm pres-x" title="Desmarcar">✕</button>` : '<button class="btn sm pres">Marcar</button>'}</td>
-        <td class="n ${p.precio == null ? 'muted' : ''}">${money(pr)}</td><td class="n ${clsMargen(mg)}">${pct(mg)}</td><td class="nw"><button class="btn sm ed">Editar</button></td></tr>`;
+        <td class="n ${p.precio == null ? 'muted' : ''}">${money(pr)}</td><td class="n ${clsMargen(mg)}">${pct(mg)}</td><td class="nw"><button class="btn sm ed">Editar</button></td><td class="nw">${p.presentado_at ? `<span class="pill ok" title="Marcado ${p.presentado_by ? 'por ' + esc(p.presentado_by) + ' ' : ''}el ${fdate(diaLocal(p.presentado_at))} ${new Date(p.presentado_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}">✔ ${fdate(diaLocal(p.presentado_at))}</span> <button class="btn sm pres-x" title="Desmarcar">✕</button>` : '<button class="btn sm pres">Marcar</button>'}</td></tr>`;
     }).join('') || '<tr><td colspan="13" class="muted" style="padding:20px">Sin pedidos para este filtro.</td></tr>';
     $$('#tb tr[data-id]').forEach(tr => {
       const p = S.peds.find(x => x.id === +tr.dataset.id);
@@ -449,13 +453,14 @@ function viewPlanilla(main) {
     });
   };
   $('#q').oninput = e => { PF.q = e.target.value; draw(); };
-  const setDia = d => { PF.dia = d; if (d) PF.mes = ''; viewPlanilla(main); };
-  $('#dia').onchange = e => setDia(e.target.value);
-  $('#hoy').onclick = () => setDia(hoyISO());
-  if ($('#sinDia')) $('#sinDia').onclick = () => setDia('');
+  const setRango = (a, b) => { PF.desde = a; PF.hasta = b; if (a || b) PF.mes = ''; viewPlanilla(main); };
+  $('#desde').onchange = e => { const d = e.target.value; setRango(d, !d ? PF.hasta : (!PF.hasta || PF.hasta < d) ? d : PF.hasta); };   // al elegir 'desde' sin 'hasta' queda ese día solo
+  $('#hasta').onchange = e => setRango(PF.desde && e.target.value && PF.desde > e.target.value ? e.target.value : PF.desde, e.target.value);
+  $('#hoy').onclick = () => setRango(hoyISO(), hoyISO());
+  if ($('#sinDia')) $('#sinDia').onclick = () => setRango('', '');
   $('#desp').onchange = e => { PF.desp = e.target.value; draw(); };
   $('#pres').onchange = e => { PF.pres = e.target.value; draw(); };
-  $$('.tabsm a').forEach(a => a.onclick = e => { e.preventDefault(); PF.mes = a.dataset.m; PF.dia = ''; viewPlanilla(main); });
+  $$('.tabsm a').forEach(a => a.onclick = e => { e.preventDefault(); PF.mes = a.dataset.m; PF.desde = PF.hasta = ''; viewPlanilla(main); });
   $('#xls').onclick = exportarExcel;
   draw();
 }
@@ -611,7 +616,7 @@ function viewAjustes(main) {
       <button class="btn" id="xls">Exportar a Excel</button>
       <h2 style="margin-top:18px">Catálogo del cotizador</h2>
       <p class="small">${S.catOk ? `✔ ${S.cat.length.toLocaleString('es-AR')} productos leídos de la Base de marcas del cotizador.` : '<span class="bad">No disponible</span> ' + esc(S.catErr)}</p></div>
-    ${esAdmin() ? '' : `<div class="card"><h2>Usuarios de Administración</h2>
+    ${!esDueno() ? '' : `<div class="card"><h2>Usuarios de Administración</h2>
       <p class="small">Ven todo menos <b>Nuevo pedido</b> (no pueden cargar pedidos). El usuario se crea igual que siempre en Supabase → Authentication → Users; acá solo se le asigna el perfil.</p>
       <div id="roles"></div>
       <div class="row" style="margin-top:8px"><input class="in" id="rEmail" type="email" placeholder="email@empresa.com" style="flex:1"><button class="btn pri" id="rAdd">Agregar</button></div></div>`}
@@ -625,7 +630,7 @@ function viewAjustes(main) {
       if (nkey(nuevo.lista_costo) !== 'CLINIC/SAN') await loadPPL(); reindexCat(); toast('Ajustes guardados'); route(); } catch (e) { toast('Error: ' + e.message, 5000); }
   };
   $('#xls').onclick = exportarExcel;
-  if (!esAdmin()) {
+  if (esDueno()) {
     const drawRoles = () => {
       const adm = S.roles.filter(r => r.rol === 'administracion');
       $('#roles').innerHTML = adm.length ? `<table class="t"><tbody>${adm.map(r => `<tr><td>${esc(r.email)}</td><td class="n"><button class="btn sm danger" data-e="${esc(r.email)}">Quitar</button></td></tr>`).join('')}</tbody></table>` : '<p class="small muted">Todavía no hay usuarios de Administración.</p>';
