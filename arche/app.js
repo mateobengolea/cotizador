@@ -221,7 +221,7 @@ function shell(active) {
   return $('#main');
 }
 function loginView() {
-  $('#app').innerHTML = `<div class="login"><h1>Arche Salud</h1><p class="sub" style="margin-top:-8px">Mismo usuario que Comparativas</p>
+  $('#app').innerHTML = `<div class="login"><h1>Arche Salud</h1>
     <input class="in" id="em" type="email" placeholder="Email" autocomplete="username">
     <input class="in" id="pw" type="password" placeholder="Contraseña" autocomplete="current-password">
     <button class="btn pri" id="go" style="width:100%">Ingresar</button><div id="err" class="bad small" style="margin-top:10px"></div></div>`;
