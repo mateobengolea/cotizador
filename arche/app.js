@@ -32,7 +32,7 @@ const TABLES = ['ah_pedidos', 'ah_config'];
 let sb = null;
 const db = DEMO ? (() => {
   const mem = {}; let seq = Date.now() % 100000;
-  for (const t of TABLES) { try { mem[t] = JSON.parse(localStorage.getItem('ahdemo_' + t) || '[]'); } catch { mem[t] = []; } }
+  for (const t of [...TABLES, 'ah_roles']) { try { mem[t] = JSON.parse(localStorage.getItem('ahdemo_' + t) || '[]'); } catch { mem[t] = []; } }
   const save = t => { try { localStorage.setItem('ahdemo_' + t, JSON.stringify(mem[t])); } catch { /* lleno */ } };
   return {
     async all(t) { return mem[t].map(r => ({ ...r })); },
@@ -78,6 +78,9 @@ async function loadAll() {
     const [peds, cfg] = await Promise.all(TABLES.map(t => db.all(t)));
     Object.assign(S, { peds, faltaSchema: false });
     S.cfg = Object.fromEntries(cfg.map(r => [r.clave, r.valor]));
+    S.roles = await db.all('ah_roles').catch(() => []);   // si todavía no se corrió el SQL de roles, todos son usuarios completos
+    const yo = nkey(S.user?.email);
+    S.rol = (S.roles.find(r => nkey(r.email) === yo)?.rol) || (DEMO && /[?&]admin\b/.test(location.search) ? 'administracion' : 'completo');
   } catch (e) {
     if (/ah_pedidos|ah_config|does not exist|schema cache|permission denied/i.test(e.message)) { S.faltaSchema = true; S.schemaErr = e.message; } else throw e;
   }
@@ -198,14 +201,15 @@ const proxNumero = () => S.peds.reduce((m, p) => Math.max(m, p.numero || 0), 0) 
 // ======================================================================
 //  Shell, login y ruteo
 // ======================================================================
+const esAdmin = () => S.rol === 'administracion';   // Administración: todo menos Nuevo pedido
 const VIEWS = [['nuevo', 'Nuevo pedido'], ['planilla', 'Planilla'], ['resumen', 'Resumen'], ['precios', 'Precios'], ['ajustes', 'Importar / Ajustes']];
 function shell(active) {
   $('#app').innerHTML = `
   <header class="top"><div class="logo">Arche Salud<small>${esc(conf('cliente'))}</small></div>
-    <nav>${VIEWS.map(([k, l]) => `<a href="#${k}" class="${k === active ? 'on' : ''}">${l}</a>`).join('')}</nav>
+    <nav>${VIEWS.filter(([k]) => !(esAdmin() && k === 'nuevo')).map(([k, l]) => `<a href="#${k}" class="${k === active ? 'on' : ''}">${esAdmin() && k === 'ajustes' ? 'Ajustes' : l}</a>`).join('')}</nav>
     <div class="who">${DEMO ? '<span class="demo-badge" title="Los datos quedan solo en este navegador">MODO DEMO</span>' : ''}
       <a class="ext" href="../" title="Volver al cotizador">Cotizador</a>
-      <span>${esc(S.user?.email || '')}</span><button id="reload" title="Traer lo último">⟳</button>${DEMO ? '' : '<button id="logout">Salir</button>'}</div></header>
+      ${esAdmin() ? '<span class="pill" style="background:rgba(255,255,255,.18);color:#fff">Administración</span>' : ''}<span>${esc(S.user?.email || '')}</span><button id="reload" title="Traer lo último">⟳</button>${DEMO ? '' : '<button id="logout">Salir</button>'}</div></header>
   <main id="main"></main>`;
   $('#reload').onclick = async () => { await Promise.all([loadAll(), loadCatalogo()]); route(); toast('Datos actualizados'); };
   if ($('#logout')) $('#logout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
@@ -230,11 +234,12 @@ async function start() {
   window.onhashchange = route; route();
 }
 function route() {
-  const v = (location.hash.slice(1) || 'nuevo').split('/')[0];
+  let v = (location.hash.slice(1) || (esAdmin() ? 'planilla' : 'nuevo')).split('/')[0];
+  if (esAdmin() && (v === 'nuevo' || !['planilla', 'resumen', 'precios', 'ajustes'].includes(v))) v = 'planilla';
   $$('.overlay').forEach(o => o.remove());
   const main = shell(v);
   if (S.faltaSchema) { main.innerHTML = `<div class="card"><h2>Falta crear las tablas</h2><p>Entrá a Supabase → proyecto <b>Cotizador</b> → <b>SQL Editor</b>, pegá el contenido de <code>arche/schema.sql</code> y tocá <b>Run</b>. Después recargá esta página.</p>${S.schemaErr ? `<p class="small muted">Detalle técnico: <code>${esc(S.schemaErr)}</code></p>` : ''}</div>`; return; }
-  ({ nuevo: viewNuevo, planilla: viewPlanilla, resumen: viewResumen, precios: viewPrecios, ajustes: viewAjustes }[v] || viewNuevo)(main);
+  ({ nuevo: viewNuevo, planilla: viewPlanilla, resumen: viewResumen, precios: viewPrecios, ajustes: viewAjustes }[v] || (esAdmin() ? viewPlanilla : viewNuevo))(main);
 }
 const catAviso = () => S.catOk ? '' : `<div class="warnbox">No pude leer los costos del cotizador${S.catErr ? ' (' + esc(S.catErr) + ')' : ''}. Los pedidos se cargan igual; el precio aparece cuando vuelva a estar disponible (botón ⟳).</div>`;
 
@@ -398,7 +403,7 @@ const esSi = v => nkey(v).startsWith('SI');
 // cuando un pedido pasa de pendiente a "Si" se guarda el momento (despachado_at); si vuelve a pendiente se borra
 const despPatch = (p, v) => { const patch = { despachado: v }; if (esSi(v) && !esSi(p.despachado)) patch.despachado_at = new Date().toISOString(); else if (!esSi(v) && p.despachado_at) patch.despachado_at = null; return patch; };
 const diaLocal = ts => { if (!ts) return ''; const d = new Date(ts); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
-const PF = { mes: null, q: '', desp: '', dia: '' };   // desp: '' todos | 'pend' solo sin despachar | 'ok' ocultar sin despachar
+const PF = { mes: null, q: '', desp: '', dia: '', pres: '' };   // desp: '' todos | 'pend' solo sin despachar | 'ok' ocultar sin despachar
 function viewPlanilla(main) {
   if ((location.hash.split('/')[1] || '') === 'pend') { PF.desp = 'pend'; history.replaceState(null, '', '#planilla'); }
   const meses = [...new Set(S.peds.map(p => (p.fecha || '').slice(0, 7)))].sort().reverse();
@@ -408,9 +413,10 @@ function viewPlanilla(main) {
     <input class="in" id="q" placeholder="Buscar afiliado, receta, producto…" value="${esc(PF.q)}" style="width:260px">
     <span class="row" style="gap:4px"><input class="in" type="date" id="dia" value="${PF.dia}" title="Ver un solo día"><button class="btn sm" id="hoy">Hoy</button>${PF.dia ? '<button class="btn sm" id="sinDia" title="Quitar el filtro de día">✕</button>' : ''}</span>
     <select class="in" id="desp">${[['', 'Todos (despachados y sin despachar)'], ['pend', 'Solo sin despachar'], ['ok', 'Ocultar sin despachar'], ['conf', 'Confirmados en el día (pasaron a Si)']].map(([k, l]) => `<option value="${k}" ${PF.desp === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
-    <button class="btn" id="xls">Exportar a Excel</button><a class="btn pri" href="#nuevo">＋ Nuevo pedido</a></div>
+    <select class="in" id="pres">${[['', 'Presentado: todos'], ['no', 'Sin presentar'], ['si', 'Presentados']].map(([k, l]) => `<option value="${k}" ${PF.pres === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <button class="btn" id="xls">Exportar a Excel</button>${esAdmin() ? '' : '<a class="btn pri" href="#nuevo">＋ Nuevo pedido</a>'}</div>
   <div class="tabsm">${[['', 'Todos'], ...meses.map(m => [m || 'none', m ? MES3[Number(m.slice(5)) - 1] + '-' + m.slice(2, 4) : 'Sin fecha'])].map(([k, l]) => `<a href="#" data-m="${k}" class="${!PF.dia && PF.mes === k ? 'on' : ''}">${l}</a>`).join('')}</div>
-  <div class="tw"><table class="t"><thead><tr><th>Fecha</th><th class="n">N°</th><th>Afiliado</th><th>Receta</th><th>Producto</th><th>Despachado</th><th>Entrega</th><th>Plan</th><th>AUT.</th><th class="n">Precio a sacar</th><th class="n">Margen</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
+  <div class="tw"><table class="t"><thead><tr><th>Fecha</th><th class="n">N°</th><th>Afiliado</th><th>Receta</th><th>Producto</th><th>Despachado</th><th>Entrega</th><th>Plan</th><th>AUT.</th><th>Presentado</th><th class="n">Precio a sacar</th><th class="n">Margen</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
   <p class="small muted">El precio queda guardado tal como estaba el día del pedido. Los pedidos sin precio (importados) muestran el de hoy en gris.</p>`;
   const draw = () => {
     const f = fold(PF.q);
@@ -418,6 +424,7 @@ function viewPlanilla(main) {
     const rows = S.peds.filter(p => (PF.desp === 'conf'
         ? esSi(p.despachado) && diaLocal(p.despachado_at) === diaConf
         : (!PF.dia || p.fecha === PF.dia) && (PF.dia || !PF.mes || (PF.mes === 'none' ? !p.fecha : (p.fecha || '').startsWith(PF.mes))) && (!PF.desp || (PF.desp === 'pend') === !esSi(p.despachado)))
+      && (!PF.pres || (PF.pres === 'si') === !!p.presentado_at)
       && (!f || fold([p.afiliado, p.receta, p.producto, p.numero].join(' ')).includes(f)))
       .sort((a, b) => (b.numero ?? 0) - (a.numero ?? 0));
     $('#cnt').textContent = rows.length + ' pedidos' + (PF.desp === 'conf' ? ` confirmados el ${fdate(diaConf)}${PF.dia ? '' : ' (hoy)'} · elegí otro día en el calendario` : '');
@@ -428,12 +435,16 @@ function viewPlanilla(main) {
       return `<tr data-id="${p.id}"><td class="nw">${fdate(p.fecha) || '<span class="muted">—</span>'}</td><td class="n">${p.numero ?? ''}</td><td class="nw"><a href="#" class="ed">${esc(p.afiliado)}</a></td><td class="nw small">${esc(p.receta)}</td><td class="small" style="min-width:250px">${esc(clean(p.producto))}</td>
         <td title="${p.despachado_at ? 'Confirmado el ' + fdate(diaLocal(p.despachado_at)) + ' ' + new Date(p.despachado_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : ''}"><select class="cell des ${des.startsWith('SI') ? 'si' : des === 'NO' ? 'no' : ''}">${['', 'Si', 'Si OCA', 'No', ...(p.despachado && !['Si', 'Si OCA', 'No'].includes(p.despachado) ? [p.despachado] : [])].map(x => `<option value="${esc(x)}" ${x === (p.despachado || '') ? 'selected' : ''}>${x || '—'}</option>`).join('')}</select></td>
         <td><select class="cell ent ${p.entrega ? '' : 'no'}">${['', 'Domicilio', 'Retira x Arce', ...(p.entrega && !['Domicilio', 'Retira x Arce'].includes(p.entrega) ? [p.entrega] : [])].map(x => `<option value="${esc(x)}" ${x === (p.entrega || '') ? 'selected' : ''}>${x || 'pendiente'}</option>`).join('')}</select></td><td class="nw small">${esc(p.plan)}</td><td class="nw small">${esc(p.aut)}</td>
+        <td class="nw">${p.presentado_at ? `<span class="pill ok" title="Marcado ${p.presentado_by ? 'por ' + esc(p.presentado_by) + ' ' : ''}el ${fdate(diaLocal(p.presentado_at))} ${new Date(p.presentado_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}">✔ ${fdate(diaLocal(p.presentado_at))}</span> <button class="btn sm pres-x" title="Desmarcar">✕</button>` : '<button class="btn sm pres">Marcar</button>'}</td>
         <td class="n ${p.precio == null ? 'muted' : ''}">${money(pr)}</td><td class="n ${clsMargen(mg)}">${pct(mg)}</td><td class="nw"><button class="btn sm ed">Editar</button></td></tr>`;
-    }).join('') || '<tr><td colspan="12" class="muted" style="padding:20px">Sin pedidos para este filtro.</td></tr>';
+    }).join('') || '<tr><td colspan="13" class="muted" style="padding:20px">Sin pedidos para este filtro.</td></tr>';
     $$('#tb tr[data-id]').forEach(tr => {
       const p = S.peds.find(x => x.id === +tr.dataset.id);
       $$('.ed', tr).forEach(a => a.onclick = e => { e.preventDefault(); editarPedido(p, () => draw()); });
       $('.ent', tr).onchange = async e => { const v = e.target.value || null; try { Object.assign(p, await db.upd('ah_pedidos', p.id, { entrega: v })); toast('Guardado'); draw(); } catch (er) { toast('Error: ' + er.message); } };
+      const setPres = async patch => { try { Object.assign(p, await db.upd('ah_pedidos', p.id, patch)); toast(patch.presentado_at ? 'Marcado como presentado' : 'Presentado desmarcado'); draw(); } catch (er) { toast('Error: ' + er.message, 5000); } };
+      if ($('.pres', tr)) $('.pres', tr).onclick = () => setPres({ presentado_at: new Date().toISOString(), presentado_by: who() });
+      if ($('.pres-x', tr)) $('.pres-x', tr).onclick = () => { if (confirm(`¿Desmarcar "Presentado" del pedido N° ${p.numero}?`)) setPres({ presentado_at: null, presentado_by: null }); };
       $('.des', tr).onchange = async e => { const v = e.target.value || null; try { Object.assign(p, await db.upd('ah_pedidos', p.id, despPatch(p, v))); toast('Guardado'); draw(); } catch (er) { toast('Error: ' + er.message); } };
     });
   };
@@ -443,6 +454,7 @@ function viewPlanilla(main) {
   $('#hoy').onclick = () => setDia(hoyISO());
   if ($('#sinDia')) $('#sinDia').onclick = () => setDia('');
   $('#desp').onchange = e => { PF.desp = e.target.value; draw(); };
+  $('#pres').onchange = e => { PF.pres = e.target.value; draw(); };
   $$('.tabsm a').forEach(a => a.onclick = e => { e.preventDefault(); PF.mes = a.dataset.m; PF.dia = ''; viewPlanilla(main); });
   $('#xls').onclick = exportarExcel;
   draw();
@@ -463,6 +475,7 @@ function editarPedido(p, done) {
       <label class="f">Plan<input class="in" id="ePla" value="${esc(p.plan)}"></label>
       <label class="f">AUT.<input class="in" id="eAut" value="${esc(p.aut)}"></label>
       <label class="f">Precio a sacar<input class="in" id="ePre" type="number" step="0.01" value="${p.precio ?? ''}"></label>
+      <label class="f">Presentado (fecha)<input class="in" id="ePres" type="date" value="${diaLocal(p.presentado_at)}"></label>
       <label class="f">Obs.<input class="in" id="eObs" value="${esc(p.obs)}"></label>
     </div>
     <datalist id="dlP">${[...new Set(familias().flatMap(f => f.items.map(i => i.nombre)))].map(m => `<option value="${esc(m)}">`).join('')}</datalist>
@@ -481,6 +494,8 @@ function editarPedido(p, done) {
       producto: v('#ePro'), despachado: v('#eDes'), entrega: v('#eEnt'), plan: v('#ePla'), aut: v('#eAut'), precio: num($('#ePre', ov).value), obs: v('#eObs') };
     if (!patch.afiliado) return toast('Falta el afiliado');
     Object.assign(patch, despPatch(p, patch.despachado));
+    const pres = $('#ePres', ov).value;
+    if (pres !== diaLocal(p.presentado_at)) Object.assign(patch, pres ? { presentado_at: new Date(pres + 'T12:00:00').toISOString(), presentado_by: who() } : { presentado_at: null, presentado_by: null });
     if (nkey(patch.producto) !== nkey(p.producto) || ov._pi) { const pi = ov._pi || precioInfo(patch.producto); patch.codigo = pi.c?.codigo || null; patch.costo = pi.costo; patch.pvp = pi.pvp; if (!ov._pi && $('#ePre', ov).value === String(p.precio ?? '')) patch.precio = pi.precio; }
     try { Object.assign(p, await db.upd('ah_pedidos', p.id, patch)); reindex(); toast('Pedido guardado'); close(); done && done(); } catch (e) { toast('Error: ' + e.message, 5000); }
   };
@@ -529,11 +544,11 @@ function verPersona(k) {
   ov.innerHTML = `<div class="modal"><button class="x">×</button><h2>${esc(I.nombre.get(k))} <span class="pill info">${esc(I.ini.get(k) || '')}</span></h2>
     <table class="t"><thead><tr><th>Fecha</th><th class="n">N°</th><th>Producto</th><th>Entrega</th><th>Desp.</th><th class="n">Precio</th></tr></thead><tbody>
     ${peds.map(p => `<tr><td class="nw">${fdate(p.fecha) || '—'}</td><td class="n">${p.numero ?? ''}</td><td class="small">${esc(clean(p.producto))}</td><td class="small">${esc(p.entrega)}</td><td class="small">${esc(p.despachado)}</td><td class="n">${money(p.precio)}</td></tr>`).join('')}</tbody></table>
-    <div class="row" style="margin-top:12px"><a class="btn pri" href="#nuevo" id="np">＋ Nuevo pedido para esta persona</a></div></div>`;
+    ${esAdmin() ? '' : '<div class="row" style="margin-top:12px"><a class="btn pri" href="#nuevo" id="np">＋ Nuevo pedido para esta persona</a></div>'}</div>`;
   document.body.appendChild(ov);
   const close = () => ov.remove();
   $('.x', ov).onclick = close; ov.onclick = e => { if (e.target === ov) close(); };
-  $('#np', ov).onclick = () => { close(); setTimeout(() => { const n = $('#nom'); if (n) { n.value = I.nombre.get(k); n.dispatchEvent(new Event('input')); } }, 60); };
+  if ($('#np', ov)) $('#np', ov).onclick = () => { close(); setTimeout(() => { const n = $('#nom'); if (n) { n.value = I.nombre.get(k); n.dispatchEvent(new Event('input')); } }, 60); };
 }
 
 // ======================================================================
@@ -568,7 +583,7 @@ async function setConf(k, v) { await db.ups('ah_config', [{ clave: k, valor: v }
 // ======================================================================
 function viewAjustes(main) {
   const listas = S.ppl ? [...new Set(S.ppl.map(y => clean(y.lista)))].sort() : null;
-  main.innerHTML = `<h1>Importar / Ajustes</h1><p class="sub" style="margin-bottom:14px">${DEMO ? 'Modo demo: los datos quedan solo en este navegador.' : 'Los cambios se guardan para todo el equipo.'}</p>
+  main.innerHTML = `<h1>${esAdmin() ? 'Ajustes' : 'Importar / Ajustes'}</h1><p class="sub" style="margin-bottom:14px">${DEMO ? 'Modo demo: los datos quedan solo en este navegador.' : 'Los cambios se guardan para todo el equipo.'}</p>
   <div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr))">
     <div class="card"><h2>Precio a sacar el pedido</h2>
       <div class="grid2">
@@ -588,14 +603,18 @@ function viewAjustes(main) {
   </div>
   <div class="row" style="margin-bottom:16px"><button class="btn pri" id="cSave">Guardar ajustes</button></div>
   <div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr))">
-    <div class="card"><h2>Importar el Excel de seguimiento</h2>
+    ${esAdmin() ? '' : `<div class="card"><h2>Importar el Excel de seguimiento</h2>
       <p class="small">Arrastrá <b>Acumulado_Arche_Salud.xlsx</b>. Se cargan los pedidos de la hoja <b>Planilla</b>. Los N° de pedido que ya estén cargados se saltean, así que se puede volver a correr sin duplicar.</p>
       <div class="drop" id="drop">Soltá el Excel acá o hacé click para elegirlo<input type="file" id="file" accept=".xlsx,.xlsm,.xls" class="hide"></div>
-      <div id="imp" style="margin-top:10px"></div></div>
+      <div id="imp" style="margin-top:10px"></div></div>`}
     <div class="card"><h2>Exportar</h2><p class="small">Baja un Excel con la Planilla (mismas columnas que el tuyo + precio) y el Resumen por persona y mes.</p>
       <button class="btn" id="xls">Exportar a Excel</button>
       <h2 style="margin-top:18px">Catálogo del cotizador</h2>
       <p class="small">${S.catOk ? `✔ ${S.cat.length.toLocaleString('es-AR')} productos leídos de la Base de marcas del cotizador.` : '<span class="bad">No disponible</span> ' + esc(S.catErr)}</p></div>
+    ${esAdmin() ? '' : `<div class="card"><h2>Usuarios de Administración</h2>
+      <p class="small">Ven todo menos <b>Nuevo pedido</b> (no pueden cargar pedidos). El usuario se crea igual que siempre en Supabase → Authentication → Users; acá solo se le asigna el perfil.</p>
+      <div id="roles"></div>
+      <div class="row" style="margin-top:8px"><input class="in" id="rEmail" type="email" placeholder="email@empresa.com" style="flex:1"><button class="btn pri" id="rAdd">Agregar</button></div></div>`}
   </div>`;
   if ($('#ldL')) $('#ldL').onclick = async e => { e.preventDefault(); e.target.textContent = 'cargando…'; await loadPPL(); viewAjustes(main); };
   $('#cSave').onclick = async () => {
@@ -606,7 +625,24 @@ function viewAjustes(main) {
       if (nkey(nuevo.lista_costo) !== 'CLINIC/SAN') await loadPPL(); reindexCat(); toast('Ajustes guardados'); route(); } catch (e) { toast('Error: ' + e.message, 5000); }
   };
   $('#xls').onclick = exportarExcel;
+  if (!esAdmin()) {
+    const drawRoles = () => {
+      const adm = S.roles.filter(r => r.rol === 'administracion');
+      $('#roles').innerHTML = adm.length ? `<table class="t"><tbody>${adm.map(r => `<tr><td>${esc(r.email)}</td><td class="n"><button class="btn sm danger" data-e="${esc(r.email)}">Quitar</button></td></tr>`).join('')}</tbody></table>` : '<p class="small muted">Todavía no hay usuarios de Administración.</p>';
+      $$('#roles button').forEach(b => b.onclick = async () => { if (!confirm('¿Quitar el perfil Administración a ' + b.dataset.e + '?')) return; try { await db.del('ah_roles', 'email', [b.dataset.e]); S.roles = S.roles.filter(r => r.email !== b.dataset.e); drawRoles(); toast('Quitado'); } catch (e) { toast('Error: ' + e.message, 5000); } });
+    };
+    $('#rAdd').onclick = async () => {
+      const em = clean($('#rEmail').value).toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return toast('Escribí un email válido');
+      if (em === nkey(S.user?.email).toLowerCase()) return toast('No te podés poner Administración a vos mismo desde acá');
+      if (S.roles.some(r => r.email.toLowerCase() === em)) return toast('Ya está');
+      try { const [r] = await db.ins('ah_roles', [{ email: em, rol: 'administracion' }]); S.roles.push(r); $('#rEmail').value = ''; drawRoles(); toast('Listo: ' + em + ' es Administración'); }
+      catch (e) { toast(/ah_roles|schema cache|does not exist/i.test(e.message) ? 'Falta correr el SQL de roles en Supabase' : 'Error: ' + e.message, 6000); }
+    };
+    drawRoles();
+  }
   const drop = $('#drop'), file = $('#file');
+  if (!drop) return;
   drop.onclick = () => file.click();
   drop.ondragover = e => { e.preventDefault(); drop.classList.add('on'); }; drop.ondragleave = () => drop.classList.remove('on');
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('on'); if (e.dataTransfer.files[0]) importar(e.dataTransfer.files[0]); };
@@ -672,11 +708,11 @@ function exportarExcel() {
   const ord = [...S.peds].sort((a, b) => (a.numero ?? 1e9) - (b.numero ?? 1e9));
   const cli = conf('cliente').split('·').map(clean);
   const pl = [[null, 'Acumulado Arche Salud', null, null, null, 'Sacar a', cli[0] || '', cli[1] || ''], [],
-    ['Fecha', 'N° Pedido', 'Afiliado', 'Receta', 'Producto', 'Despachado', 'Forma de entrega', 'Plan', 'AUT. RECETASOLIDARIA', 'Iniciales', 'Código', 'PVP', 'Precio a sacar', 'Costo'],
-    ...ord.map(p => [p.fecha ? new Date(p.fecha + 'T12:00:00') : null, p.numero, p.afiliado, p.receta, clean(p.producto), p.despachado, p.entrega, p.plan, p.aut, p.iniciales, p.codigo, p.pvp, p.precio, p.costo])];
+    ['Fecha', 'N° Pedido', 'Afiliado', 'Receta', 'Producto', 'Despachado', 'Forma de entrega', 'Plan', 'AUT. RECETASOLIDARIA', 'Iniciales', 'Código', 'PVP', 'Precio a sacar', 'Costo', 'Presentado'],
+    ...ord.map(p => [p.fecha ? new Date(p.fecha + 'T12:00:00') : null, p.numero, p.afiliado, p.receta, clean(p.producto), p.despachado, p.entrega, p.plan, p.aut, p.iniciales, p.codigo, p.pvp, p.precio, p.costo, p.presentado_at ? new Date(diaLocal(p.presentado_at) + 'T12:00:00') : null])];
   const ws = XLSX.utils.aoa_to_sheet(pl, { cellDates: true });
-  ws['!cols'] = [12, 9, 28, 22, 42, 11, 15, 11, 18, 9, 10, 12, 13, 12].map(w => ({ wch: w }));
-  for (let r = 3; r < pl.length; r++) { const c = ws[XLSX.utils.encode_cell({ r, c: 0 })]; if (c && c.t === 'd') c.z = 'dd/mm/yyyy'; for (const k of [11, 12, 13]) { const x = ws[XLSX.utils.encode_cell({ r, c: k })]; if (x) x.z = '#,##0.00'; } }
+  ws['!cols'] = [12, 9, 28, 22, 42, 11, 15, 11, 18, 9, 10, 12, 13, 12, 12].map(w => ({ wch: w }));
+  for (let r = 3; r < pl.length; r++) { const c = ws[XLSX.utils.encode_cell({ r, c: 0 })]; if (c && c.t === 'd') c.z = 'dd/mm/yyyy'; const cp = ws[XLSX.utils.encode_cell({ r, c: 14 })]; if (cp && cp.t === 'd') cp.z = 'dd/mm/yyyy'; for (const k of [11, 12, 13]) { const x = ws[XLSX.utils.encode_cell({ r, c: k })]; if (x) x.z = '#,##0.00'; } }
   XLSX.utils.book_append_sheet(wb, ws, 'Planilla');
   const { meses, rows } = resumenData();
   const rs = [['Consumos por persona y por mes'], [], ['Nombre', 'Iniciales', 'Total', ...meses.map(m => MES3[Number(m.slice(5)) - 1] + '-' + m.slice(2, 4)), 'Sin fecha'],
