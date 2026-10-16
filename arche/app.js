@@ -407,7 +407,7 @@ const despPatch = (p, v) => { const patch = { despachado: v }; if (esSi(v) && !e
 const diaLocal = ts => { if (!ts) return ''; const d = new Date(ts); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 // rango de fechas de la Planilla: solo "desde" = ese día en adelante; solo "hasta" = hasta ese día; ambos iguales = un día
 const rango = () => (PF.desde || PF.hasta) ? [PF.desde || '0000-01-01', PF.hasta || PF.desde && '9999-12-31' || PF.hasta] : null;
-const PF = { mes: null, q: '', desp: '', desde: '', hasta: '', pres: '' };   // desp: '' todos | 'pend' solo sin despachar | 'ok' ocultar sin despachar
+const PF = { mes: null, q: '', desp: '', desde: '', hasta: '', pres: '', plan: '', aut: '' };   // desp: '' todos | 'pend' solo sin despachar | 'ok' ocultar sin despachar
 function viewPlanilla(main) {
   if ((location.hash.split('/')[1] || '') === 'pend') { PF.desp = 'pend'; history.replaceState(null, '', '#planilla'); }
   const meses = [...new Set(S.peds.map(p => (p.fecha || '').slice(0, 7)))].sort().reverse();
@@ -418,6 +418,8 @@ function viewPlanilla(main) {
     <span class="row" style="gap:4px"><span class="small muted">Desde</span><input class="in" type="date" id="desde" value="${PF.desde}"><span class="small muted">hasta</span><input class="in" type="date" id="hasta" value="${PF.hasta}" title="Para un solo día, la misma fecha en las dos"><button class="btn sm" id="hoy">Hoy</button>${rango() ? '<button class="btn sm" id="sinDia" title="Quitar el filtro de fechas">✕</button>' : ''}</span>
     <select class="in" id="desp">${[['', 'Todos (despachados y sin despachar)'], ['pend', 'Solo sin despachar'], ['ok', 'Ocultar sin despachar'], ['conf', 'Confirmados en el día (pasaron a Si)']].map(([k, l]) => `<option value="${k}" ${PF.desp === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
     <select class="in" id="pres">${[['', 'Presentado: todos'], ['no', 'Sin presentar'], ['si', 'Presentados']].map(([k, l]) => `<option value="${k}" ${PF.pres === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    ${['plan', 'aut'].map(c => { const vals = [...new Set(S.peds.map(p => clean(p[c])))].sort((a, b) => (!a) - (!b) || a.localeCompare(b));
+      return `<select class="in fcol" data-c="${c}">${[['', c === 'plan' ? 'Plan: todos' : 'AUT.: todas'], ...vals.map(v => [v || '__vacio', v || '(sin ' + (c === 'plan' ? 'plan' : 'AUT.') + ')'])].map(([k, l]) => `<option value="${esc(k)}" ${PF[c] === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`; }).join('')}
     <button class="btn" id="xls">Exportar a Excel</button>${esAdmin() ? '' : '<a class="btn pri" href="#nuevo">＋ Nuevo pedido</a>'}</div>
   <div class="tabsm">${[['', 'Todos'], ...meses.map(m => [m || 'none', m ? MES3[Number(m.slice(5)) - 1] + '-' + m.slice(2, 4) : 'Sin fecha'])].map(([k, l]) => `<a href="#" data-m="${k}" class="${!rango() && PF.mes === k ? 'on' : ''}">${l}</a>`).join('')}</div>
   <div class="tw"><table class="t pres-r"><thead><tr><th>Fecha</th><th class="n">N°</th><th>Afiliado</th><th>Receta</th><th>Producto</th><th>Despachado</th><th>Entrega</th><th>Plan</th><th>AUT.</th><th class="n">Precio a sacar</th><th class="n">Margen</th><th></th><th>Presentado</th></tr></thead><tbody id="tb"></tbody></table></div>
@@ -430,6 +432,7 @@ function viewPlanilla(main) {
         ? esSi(p.despachado) && enRango(diaLocal(p.despachado_at))
         : (!rango() || enRango(p.fecha)) && (rango() || !PF.mes || (PF.mes === 'none' ? !p.fecha : (p.fecha || '').startsWith(PF.mes))) && (!PF.desp || (PF.desp === 'pend') === !esSi(p.despachado)))
       && (!PF.pres || (PF.pres === 'si') === !!p.presentado_at)
+      && ['plan', 'aut'].every(c => !PF[c] || (PF[c] === '__vacio' ? !clean(p[c]) : clean(p[c]) === PF[c]))
       && (!f || fold([p.afiliado, p.receta, p.producto, p.numero].join(' ')).includes(f)))
       .sort((a, b) => (b.numero ?? 0) - (a.numero ?? 0));
     $('#cnt').textContent = rows.length + ' pedidos' + (PF.desp === 'conf' ? ` confirmados ${d1 === d2 ? 'el ' + fdate(d1) + (rango() ? '' : ' (hoy)') : (!PF.desde ? 'hasta el ' + fdate(d2) : 'del ' + fdate(d1) + ' al ' + fdate(d2))} · cambiá las fechas para ver otro período` : rango() ? ` · ${d1 === d2 ? fdate(d1) : !PF.desde ? 'hasta el ' + fdate(d2) : !PF.hasta ? 'desde el ' + fdate(d1) : fdate(d1) + ' al ' + fdate(d2)}` : '');
@@ -460,6 +463,7 @@ function viewPlanilla(main) {
   if ($('#sinDia')) $('#sinDia').onclick = () => setRango('', '');
   $('#desp').onchange = e => { PF.desp = e.target.value; draw(); };
   $('#pres').onchange = e => { PF.pres = e.target.value; draw(); };
+  $$('.fcol').forEach(sel => sel.onchange = () => { PF[sel.dataset.c] = sel.value; draw(); });
   $$('.tabsm a').forEach(a => a.onclick = e => { e.preventDefault(); PF.mes = a.dataset.m; PF.desde = PF.hasta = ''; viewPlanilla(main); });
   $('#xls').onclick = exportarExcel;
   draw();
