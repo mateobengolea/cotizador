@@ -1059,20 +1059,14 @@ function vComp(id) {
   const rs = I.rensByComp.get(id) || [];
   const cot = I.cot.get(c.cotizacion_id);
   const its = cot ? (I.itemsByCot.get(cot.id) || []) : [];
-  let gan = 0, cot1 = 0, cerca = 0, perdido = 0, ahorro = 0;
-  for (const r of rs) { const a = I.ana.get(r.id); if (!a.propia) continue; cot1++; if (a.posicion === 1) gan++; else if (a.unitComp) { const d = a.unitPropio / a.unitComp - 1; if (d < conf('cercania')) cerca++; perdido += a.propia.precio_total; ahorro += a.propia.precio_total - a.mejorComp.precio_total; } }
   const opts = [...S.cots].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).map(x => `<option value="${x.id}" ${x.id === c.cotizacion_id ? 'selected' : ''}>${esc(x.proceso)} · ${fdate(x.fecha)}</option>`).join('');
   shell(`<div class="row" style="margin-bottom:12px"><a href="#comparativas" class="small">← Comparativas</a></div>
   <div class="card"><div class="row"><div><h1>${esc(c.titulo || c.proceso)}</h1><div class="sub">${esc(c.archivo || '')} · ${esc(c.origen || '')}</div></div><span class="spacer"></span>
     <label class="f">Cotización vinculada<select class="in" id="cs"><option value="">— ninguna —</option>${opts}</select></label>
     <button class="btn" id="relink" ${cot ? '' : 'disabled'}>Re-vincular automático</button><button class="btn" id="xlsC">Exportar Excel</button>${cot ? `<a class="btn" href="#cot/${cot.id}">Abrir cotización</a>` : ''}<button class="btn danger" id="del">Eliminar</button></div></div>
-  <div class="kpis"><div class="kpi"><div class="l">Renglones</div><div class="v">${rs.length}</div><div class="s">${rs.filter(r => r.item_id).length} vinculados a la cotización</div></div>
-    <div class="kpi"><div class="l">Cotizamos</div><div class="v">${cot1}</div></div>
-    <div class="kpi"><div class="l">1° lugar</div><div class="v ok">${gan}</div><div class="s">${cot1 ? pct(gan / cot1, 0) : ''}</div></div>
-    <div class="kpi"><div class="l">Perdidos por menos de ${pct(conf('cercania'), 0)}</div><div class="v warn">${cerca}</div><div class="s">oportunidades cercanas</div></div>
-    <div class="kpi"><div class="l">Monto perdido</div><div class="v">${money(perdido)}</div><div class="s">había que bajar ${money(ahorro)} en total</div></div></div>
+  <div class="kpis" id="compKpis">${kpisCompHTML(rs)}</div>
   <div class="xltabs" style="border-radius:6px;border-top:1px solid #c8c8c8;margin-bottom:8px;display:inline-flex"><a href="#" data-m="planilla" class="${compMode === 'planilla' ? 'on' : ''}">Planilla del acta</a><a href="#" data-m="vinc" class="${compMode === 'vinc' ? 'on' : ''}">Vínculos y márgenes</a></div>
-  ${compMode === 'planilla' ? `<div id="gh"></div>${AYUDA.replace(/escrib[^·]*·/, '').replace('<kbd>Supr</kbd> borra · <kbd>Ctrl</kbd>+<kbd>Z</kbd> deshace · click derecho en una fila para más opciones · ', '')}` : `
+  ${compMode === 'planilla' ? `<div id="gh"></div><div class="xlhelp">Las celdas de precio y marca se pueden corregir a mano: escribí el <b>precio total</b> del renglón (como figura en el acta) o <b>NC</b> si no cotizó; Supr deja la celda como NC. Ctrl+Z deshace. Al cambiar un precio se recalculan al instante la posición, el mejor competidor y los márgenes en toda la web.</div>` : `
   <div class="tw"><table class="t" id="cg"><thead><tr><th class="n">R</th><th>Descripción del acta</th><th class="n">Cant.</th><th>Nuestro renglón</th><th class="n">Nuestro unit.</th><th class="c">Pos.</th><th>Mejor competidor</th><th class="n">Unit. comp.</th><th class="n">Diferencia</th><th class="n">Margen p/igualar (costo cotizado)</th><th class="n">Margen p/igualar (costo actual)</th></tr></thead><tbody>
   ${rs.map(r => { const a = I.ana.get(r.id); const it = r.item_id && I.item.get(r.item_id); const m = a.mejorComp;
     const mc = it && a.unitComp ? 1 - costoMetaCot(it) / a.unitComp : null; const ma = it && a.unitComp && costoMetaAct(it) != null && !saltoRaro(it) ? 1 - costoMetaAct(it) / a.unitComp : null;
@@ -1084,7 +1078,10 @@ function vComp(id) {
     <td class="n ${clsMargen(mc)}">${pct(mc)}</td><td class="n ${clsMargen(ma)}">${pct(ma)}</td></tr>`; }).join('')}
   </tbody></table></div><p class="legend">“Mejor competidor” = la oferta válida más baja que no es nuestra (si en el histórico figura quién fue adjudicado, se usa ese). Click en una fila para ver todas las ofertas.</p>`}`, { full: compMode === 'planilla' });
   $$('[data-m]').forEach(a => a.onclick = e => { e.preventDefault(); compMode = a.dataset.m; vComp(id); });
-  if (compMode === 'planilla') { const host = $('#gh'); host.style.height = 'calc(100vh - 150px)'; host.style.minHeight = '420px'; const g = Grid(host, { id: 'acta', cols: actaCols(rs), frozen: 3 }); g.setRows(rs); g.focus(); }
+  if (compMode === 'planilla') { const host = $('#gh'); host.style.height = 'calc(100vh - 150px)'; host.style.minHeight = '420px'; const acols = actaCols(rs); const g = Grid(host, { id: 'acta', cols: acols, frozen: 3,
+      onEdit: async ch => { await editarActa(ch, c, UNDO_ACTA); g.setRows(I.rensByComp.get(id) || rs); refrescarKpisComp(id); toast('Guardado'); },
+      onUndo: async () => { await deshacerActa(); g.setRows(I.rensByComp.get(id) || rs); refrescarKpisComp(id); } });
+    host._grid = g; g._cols = acols; g.setRows(rs); g.focus(); }
   $('#cs').onchange = async e => { const v = +e.target.value || null; await db.upd('cc_comparativas', c.id, { cotizacion_id: v, fecha: v ? I.cot.get(v).fecha : c.fecha }); c.cotizacion_id = v; await relink(c, true); };
   $('#relink').onclick = () => relink(c, false);
   $('#xlsC').onclick = () => exportComp(c);
@@ -1092,7 +1089,49 @@ function vComp(id) {
   if ($('#cg')) $('#cg').addEventListener('change', async e => { if (!e.target.matches('[data-link]')) return; const rid = +e.target.closest('tr').dataset.r; const v = +e.target.value || null; await db.upd('cc_comp_renglones', rid, { item_id: v, vinculo_manual: true }); S.rens.find(x => x.id === rid).item_id = v; reindex(); vComp(c.id); toast('Vínculo guardado'); });
   if ($('#cg')) $('#cg').addEventListener('click', e => { if (e.target.closest('select')) return; const tr = e.target.closest('tr[data-r]'); if (!tr) return; const r = S.rens.find(x => x.id === +tr.dataset.r); modal(`<h2>R${r.renglon} · ${esc(r.descripcion)}</h2><p class="sub">Cantidad ${nf0.format(r.cantidad || 0)}</p>${ofertasTabla(r)}`); });
 }
+function kpisCompHTML(rs) {
+  let gan = 0, cot1 = 0, cerca = 0, perdido = 0, ahorro = 0;
+  for (const r of rs) { const a = I.ana.get(r.id); if (!a.propia) continue; cot1++; if (a.posicion === 1) gan++; else if (a.unitComp) { const d = a.unitPropio / a.unitComp - 1; if (d < conf('cercania')) cerca++; perdido += a.propia.precio_total; ahorro += a.propia.precio_total - a.mejorComp.precio_total; } }
+  return `<div class="kpi"><div class="l">Renglones</div><div class="v">${rs.length}</div><div class="s">${rs.filter(r => r.item_id).length} vinculados a la cotización</div></div>
+    <div class="kpi"><div class="l">Cotizamos</div><div class="v">${cot1}</div></div>
+    <div class="kpi"><div class="l">1° lugar</div><div class="v ok">${gan}</div><div class="s">${cot1 ? pct(gan / cot1, 0) : ''}</div></div>
+    <div class="kpi"><div class="l">Perdidos por menos de ${pct(conf('cercania'), 0)}</div><div class="v warn">${cerca}</div><div class="s">oportunidades cercanas</div></div>
+    <div class="kpi"><div class="l">Monto perdido</div><div class="v">${money(perdido)}</div><div class="s">había que bajar ${money(ahorro)} en total</div></div>`;
+}
+function refrescarKpisComp(id) { const el = $('#compKpis'); if (el) el.innerHTML = kpisCompHTML(I.rensByComp.get(id) || []); }
 let compMode = 'planilla';
+const UNDO_ACTA = [];
+async function editarActa(changes, comp, undoList) {
+  const undo = [];
+  for (const { row: r, col, value } of changes) {
+    const v = String(value ?? '').trim();
+    if (col.key === 'desc' || col.key === 'cr') {
+      const patch = col.key === 'desc' ? { descripcion: v } : { cantidad: v === '' ? null : P.num(v) };
+      undo.push({ t: 'ren', id: r.id, before: { descripcion: r.descripcion, cantidad: r.cantidad } });
+      Object.assign(r, await db.upd('cc_comp_renglones', r.id, patch));
+      continue;
+    }
+    if (!col.prov) continue;
+    let patch;
+    if (col.key.startsWith('m')) patch = { marca: v };
+    else if (v === '' || /^n\/?c\.?$/i.test(v) || /^no cotiz/i.test(v)) patch = { precio_total: null, estado: 'No cotiza' };
+    else { const n = P.num(v.replace(/\$/g, '')); patch = n != null && n >= 0 ? { precio_total: n, estado: 'Cotizó' } : { precio_total: null, estado: v }; }
+    let o = (I.ofsByRen.get(r.id) || []).find(x => x.proveedor === col.prov);
+    if (o) { undo.push({ t: 'of', id: o.id, before: { precio_total: o.precio_total, estado: o.estado, marca: o.marca } }); Object.assign(o, await db.upd('cc_comp_ofertas', o.id, patch)); }
+    else { const [n] = await db.ins('cc_comp_ofertas', [{ renglon_id: r.id, proveedor: col.prov, es_propio: esPropio(col.prov), estado: 'No cotiza', ...patch }]); S.ofs.push(n); undo.push({ t: 'ofNew', id: n.id }); }
+  }
+  if (undo.length && undoList) undoList.push(undo);
+  reindex();
+}
+async function deshacerActa() {
+  const u = UNDO_ACTA.pop(); if (!u) { toast('Nada para deshacer'); return; }
+  for (const x of [...u].reverse()) {
+    if (x.t === 'ren') { const r = S.rens.find(q => q.id === x.id); if (r) Object.assign(r, await db.upd('cc_comp_renglones', x.id, x.before)); }
+    else if (x.t === 'of') { const o = S.ofs.find(q => q.id === x.id); if (o) Object.assign(o, await db.upd('cc_comp_ofertas', x.id, x.before)); }
+    else if (x.t === 'ofNew') { await db.del('cc_comp_ofertas', 'id', [x.id]); S.ofs = S.ofs.filter(q => q.id !== x.id); }
+  }
+  reindex(); toast('Deshecho');
+}
 function actaCols(rs) {
   const provs = [];
   for (const r of rs) for (const o of (I.ofsByRen.get(r.id) || []).sort((a, b) => a.id - b.id)) if (!provs.includes(o.proveedor)) provs.push(o.proveedor);
@@ -1101,14 +1140,14 @@ function actaCols(rs) {
   const it = r => r.item_id ? I.item.get(r.item_id) : null;
   const cols = [
     { key: 'renglon', title: 'Ítem', w: 44, type: 'num', get: r => r.renglon },
-    { key: 'desc', title: 'Descripción', w: 240, type: 'text', get: r => r.descripcion, onOpen: r => modal(`<h2>R${r.renglon} · ${esc(r.descripcion)}</h2><p class="sub">Cantidad ${nf0.format(r.cantidad || 0)}</p>${ofertasTabla(r)}`) },
-    { key: 'cr', title: 'C.R.', w: 52, type: 'num', get: r => r.cantidad, fmt: v => v == null ? '' : nf0.format(v) },
+    { key: 'desc', title: 'Descripción', w: 240, type: 'text', edit: 1, get: r => r.descripcion, onOpen: r => modal(`<h2>R${r.renglon} · ${esc(r.descripcion)}</h2><p class="sub">Cantidad ${nf0.format(r.cantidad || 0)}</p>${ofertasTabla(r)}`) },
+    { key: 'cr', title: 'C.R.', w: 52, type: 'num', edit: 1, get: r => r.cantidad, fmt: v => v == null ? '' : nf0.format(v) },
   ];
   provs.forEach((p, i) => {
     const prop = esPropio(p);
-    cols.push({ key: 'p' + i, title: P.canonProv(p) + ' · Precio', tip: p, w: 108, type: 'num', live: prop, get: r => { const o = of(r, p); return o ? (o.precio_total ?? (o.estado === 'No cotiza' ? 'NC' : o.estado || '')) : ''; }, fmt: v => typeof v === 'number' ? nf2.format(v) : `<span class="g">${esc(v)}</span>`,
+    cols.push({ key: 'p' + i, prov: p, title: P.canonProv(p) + ' · Precio', tip: p + ' — precio TOTAL del renglón. Escribí el número, o NC si no cotizó', w: 108, type: 'num', edit: 1, live: prop, get: r => { const o = of(r, p); return o ? (o.precio_total ?? (o.estado === 'No cotiza' ? 'NC' : o.estado || '')) : ''; }, fmt: v => typeof v === 'number' ? nf2.format(v) : `<span class="g">${esc(v)}</span>`,
       cls: (v, r) => { if (typeof v !== 'number') return ''; const a = I.ana.get(r.id); const min = Math.min(...(I.ofsByRen.get(r.id) || []).filter(o => o.precio_total > 0).map(o => o.precio_total)); return (v === min ? 'best ' : '') + (prop ? 'prop' : ''); } });
-    cols.push({ key: 'm' + i, title: P.canonProv(p) + ' · Marca', w: 120, type: 'text', live: prop, get: r => { const o = of(r, p); return o ? o.marca || '' : ''; } });
+    cols.push({ key: 'm' + i, prov: p, title: P.canonProv(p) + ' · Marca', w: 120, type: 'text', edit: 1, live: prop, get: r => { const o = of(r, p); return o ? o.marca || '' : ''; } });
   });
   cols.push(
     { key: 'mejor', title: 'Mejor competidor', w: 140, type: 'text', live: 1, get: r => { const a = I.ana.get(r.id); return a.mejorComp ? P.canonProv(a.mejorComp.proveedor) : ''; } },
