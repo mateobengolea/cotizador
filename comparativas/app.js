@@ -114,7 +114,8 @@ function reindex() {
   I.rensByItem = by(S.rens.filter(r => r.item_id), 'item_id');
   I.ofsByRen = by(S.ofs, 'renglon_id');
   I.costo = new Map(); I.costoCod = new Map();
-  for (const c of (S.cat.length ? S.cat : S.costos)) { I.costo.set(c.codigo + '|' + c.lista, c); if (!I.costoCod.has(c.codigo)) I.costoCod.set(c.codigo, c); }
+  I.listasCod = new Map();
+  for (const c of (S.cat.length ? S.cat : S.costos)) { I.costo.set(c.codigo + '|' + c.lista, c); if (!I.costoCod.has(c.codigo)) I.costoCod.set(c.codigo, c); if (!I.listasCod.has(c.codigo)) I.listasCod.set(c.codigo, new Set()); I.listasCod.get(c.codigo).add(c.lista); }
   // análisis por renglón + índices de inteligencia competitiva
   I.ana = new Map(); I.porCodigo = new Map(); I.porMono = new Map(); if (typeof LM !== 'undefined') LM.clear();
   for (const r of S.rens) {
@@ -132,7 +133,14 @@ const fechaRen = r => { const c = I.comp.get(r.comparativa_id); return (c && (c.
 const cotDeRen = r => { const c = I.comp.get(r.comparativa_id); return c && c.cotizacion_id ? I.cot.get(c.cotizacion_id) : null; };
 
 // costos vigentes
-const costoRow = it => I.costo.get(it.codigo + '|' + (it.lista || '')) || I.costoCod.get(it.codigo) || null;
+const LISTA_DEF = 'ISSN_NQN';
+const listaCot = c => (c && c.lista) || LISTA_DEF;
+const listaItem = it => it.lista || listaCot(I.cot.get(it.cotizacion_id));
+const listasDisponibles = () => { const s = new Set(S.cat.map(k => k.lista).filter(Boolean)); s.add(LISTA_DEF); return [...s].sort(); };
+const listasDeCodigo = cod => [...(I.listasCod.get(String(cod || '').trim()) || [])];
+// costo SOLO de la lista del renglón (si el producto no está en esa lista, no se toma de otra)
+const costoRow = it => I.costo.get(String(it.codigo || '').trim() + '|' + listaItem(it)) || null;
+const opcionesLista = sel => listasDisponibles().map(l => `<option ${l === sel ? 'selected' : ''}>${esc(l)}</option>`).join('');
 const costoMetaCot = it => P.costoMeta(it);
 const costoMetaAct = it => { const r = costoRow(it); return r ? P.costoMeta(it, r) : null; };
 // Si el costo de lista difiere mucho del cotizado, casi seguro hubo un costo especial negociado:
@@ -276,13 +284,14 @@ function nuevaCot() {
   const o = modal(`<h2>Nueva cotización</h2><div class="grid2">
     <label class="f">Proceso / expediente<input class="in" id="np" placeholder="EXPTE 251500" required></label>
     <label class="f">Apertura<input class="in" id="na" placeholder="dd/mm/aaaa - 10:00hs"></label>
-    <label class="f">Cliente<input class="in" id="nc" value="ISSN"></label></div>
+    <label class="f">Cliente<input class="in" id="nc" value="ISSN"></label>
+    <label class="f">Lista de costos<select class="in" id="nl">${opcionesLista(LISTA_DEF)}</select></label></div>
     <div class="row" style="margin-top:16px"><span class="spacer"></span><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Crear</button></div>`);
   $('#ok', o).onclick = async () => {
     const proceso = $('#np', o).value.trim(); if (!proceso) return;
     if (S.cots.some(c => P.norm(c.proceso) === P.norm(proceso))) return toast('Ese proceso ya existe');
     const ap = $('#na', o).value.trim();
-    const [c] = await db.ins('cc_cotizaciones', [{ proceso, apertura: ap, fecha: P.fechaDe(ap) || new Date().toISOString().slice(0, 10), hoja: hojaActual(), cliente: $('#nc', o).value.trim(), estado: 'abierta', updated_by: who() }]);
+    const [c] = await db.ins('cc_cotizaciones', [{ proceso, apertura: ap, fecha: P.fechaDe(ap) || new Date().toISOString().slice(0, 10), hoja: hojaActual(), cliente: $('#nc', o).value.trim(), lista: $('#nl', o).value, estado: 'abierta', updated_by: who() }]);
     S.cots.push(c); reindex(); o.remove(); location.hash = '#cot/' + c.id;
   };
 }
@@ -343,8 +352,8 @@ function planCols(sin = []) {
     // ---- en vivo ----
     { key: 'costo_act', title: 'Costo actual', w: 100, type: N, live: 1, get: r => L(r).ca, fmt: (v, r) => v == null ? '' : L(r).raro ? `<span class="g">${nf2.format(v)}</span>` : nf2.format(v), tip: 'Costo META con los costos cargados hoy' },
     { key: 'stock_cot', title: 'Stock (cotizador)', w: 70, type: N, live: 1, get: r => { const k = costoRow(r); return k && k.stockCot != null ? k.stockCot : null; }, fmt: n0, tip: 'Stock del catálogo del cotizador' },
-    { key: 'control', title: 'Control costo', w: 92, type: T, live: 1, get: r => { const x = L(r); if (x.ca == null) return 'SIN DATO'; if (x.raro) return '¿ESPECIAL?'; return x.cc && Math.abs(x.ca / x.cc - 1) > 0.0005 ? 'ACTUALIZAR' : 'IGUAL'; },
-      cls: v => v === 'IGUAL' ? 'ok' : v === 'ACTUALIZAR' ? 'warn b' : v === '¿ESPECIAL?' ? 'bad' : 'g', titleOf: (v, r) => { const x = L(r); return x.ca != null && x.cc ? `Costo actual vs cotizado: ${x.ca > x.cc ? '+' : ''}${pct(x.ca / x.cc - 1)}${x.raro ? ' — diferencia muy grande, probable costo especial: no se usa en los cálculos' : ''}` : ''; } },
+    { key: 'control', title: 'Control costo', w: 92, type: T, live: 1, get: r => { const x = L(r); if (x.ca == null) return r.codigo && listasDeCodigo(r.codigo).length ? 'NO EN LISTA' : 'SIN DATO'; if (x.raro) return '¿ESPECIAL?'; return x.cc && Math.abs(x.ca / x.cc - 1) > 0.0005 ? 'ACTUALIZAR' : 'IGUAL'; },
+      cls: v => v === 'IGUAL' ? 'ok' : v === 'ACTUALIZAR' ? 'warn b' : v === '¿ESPECIAL?' || v === 'NO EN LISTA' ? 'bad' : 'g', titleOf: (v, r) => { if (v === 'NO EN LISTA') return `El código no está en la lista ${listaItem(r)}. Está en: ${listasDeCodigo(r.codigo).join(', ')}`; const x = L(r); return x.ca != null && x.cc ? `Costo actual vs cotizado: ${x.ca > x.cc ? '+' : ''}${pct(x.ca / x.cc - 1)}${x.raro ? ' — diferencia muy grande, probable costo especial: no se usa en los cálculos' : ''}` : ''; } },
     { key: 'r_act', title: 'R [%] con costo actual', w: 76, type: 'pct', live: 1, get: r => { const x = L(r); return x.ca != null && !x.raro && r.precio_unit ? 1 - x.ca / r.precio_unit : null; }, fmt: pc2, cls: v => clsMargen(v), formula: (n, C) => `=1-${C('costo_act')}${n}/${C('precio_unit')}${n}` },
     { key: 'pos', title: 'Posición en acta', w: 72, type: N, live: 1, get: r => L(r).act ? L(r).act.posicion : null, fmt: (v, r) => v ? `${v}° de ${L(r).act.ofertasValidas}` : (L(r).act ? 'no cotiz.' : ''), cls: v => v === 1 ? 'ok b' : v ? 'bad' : '' },
     { key: 'mejor', title: 'Mejor competidor', w: 140, type: T, live: 1, get: r => { const a = L(r).act; return a ? (a.mejorComp ? P.canonProv(a.mejorComp.proveedor) : 'Sin competencia') : ''; }, cls: v => v === 'Sin competencia' ? 'ok' : '', titleOf: v => v === 'Sin competencia' ? 'En el acta de este proceso ningún otro proveedor cotizó este renglón' : '' },
@@ -372,9 +381,21 @@ function aplicarCampo(it, key, value, patch, cotPatch, setMove) {
     case 'precio_unit': patch.precio_unit = v === '' ? null : Math.round(nn()); patch.margen = P.margenDe(P.costoMeta(cur()), patch.precio_unit); break;
     case 'codigo': {
       patch.codigo = v;
-      const c = cur(); const k = I.costo.get(v + '|' + (c.lista || '')) || I.costoCod.get(v);
-      if (k) { Object.assign(patch, { lista: c.lista || k.lista, detalle: k.detalle, monodroga: k.monodroga, laboratorio: k.laboratorio, pvp: k.pvp, psl: k.psl, dtocpa: k.dtocpa, costo: k.costo }); if (c.margen == null) patch.margen = conf('margenObjetivo'); reprice(); }
-      else if (v) toast(`El código ${v} no está en Costos: completá los datos a mano`);
+      const c = cur(); const lista = c.lista || listaCot(I.cot.get(c.cotizacion_id)); patch.lista = lista;
+      const k = I.costo.get(v + '|' + lista);
+      if (k) { Object.assign(patch, { detalle: k.detalle, monodroga: k.monodroga, laboratorio: k.laboratorio, pvp: k.pvp, psl: k.psl, dtocpa: k.dtocpa, costo: k.costo }); if (c.margen == null) patch.margen = conf('margenObjetivo'); reprice(); }
+      else if (v) {
+        const otras = listasDeCodigo(v); const g = I.costoCod.get(v);
+        if (g) Object.assign(patch, { detalle: g.detalle, monodroga: g.monodroga, laboratorio: g.laboratorio, pvp: null, psl: null, dtocpa: null, costo: null });
+        toast(otras.length ? `El código ${v} no está en la lista ${lista} (sí en: ${otras.join(', ')}). Quedó sin costo: cambiá la LISTA del renglón si corresponde.` : `El código ${v} no está en los costos del cotizador: completá los datos a mano`, 7000);
+      }
+      break;
+    }
+    case 'lista': {
+      const l = v.toUpperCase(); patch.lista = l || null;
+      const c = cur(); const k = c.codigo && I.costo.get(String(c.codigo).trim() + '|' + (l || listaCot(I.cot.get(c.cotizacion_id))));
+      if (k) { Object.assign(patch, { pvp: k.pvp, psl: k.psl, dtocpa: k.dtocpa, costo: k.costo }); reprice(); }
+      else if (c.codigo) { const otras = listasDeCodigo(c.codigo); toast(`El código ${c.codigo} no está en la lista ${l}${otras.length ? ` (sí en: ${otras.join(', ')})` : ''}. Se dejó el costo anterior.`, 7000); }
       break;
     }
     case 'adjudicado': patch.adjudicado = v === '' ? null : /^(s|si|sí|1|x|true|y)$/i.test(v); break;
@@ -413,7 +434,7 @@ async function nuevaFila(cells, procDef, hoja) {
   if (!proceso) { toast('Escribí primero el Proceso de la fila nueva'); return; }
   const cot = await cotPorProceso(proceso, hoja);
   const its = I.itemsByCot.get(cot.id) || [];
-  const base = { cotizacion_id: cot.id, renglon: Math.max(0, ...its.map(i => i.renglon || 0)) + 1, orden: Math.max(0, ...its.map(i => i.orden || 0)) + 1, margen: conf('margenObjetivo') };
+  const base = { cotizacion_id: cot.id, lista: listaCot(cot), renglon: Math.max(0, ...its.map(i => i.renglon || 0)) + 1, orden: Math.max(0, ...its.map(i => i.orden || 0)) + 1, margen: conf('margenObjetivo') };
   const patch = {}, cp = {};
   for (const { col, value } of cells) if (col.key !== 'proceso') aplicarCampo(base, col.key, value, patch, cp, () => {});
   const [it] = await db.ins('cc_items', [{ ...base, ...patch }]);
@@ -667,6 +688,7 @@ function vCot(id) {
       <label class="f">Condición<input class="in" data-c="condicion" value="${esc(c.condicion || '')}"></label>
       <label class="f">Mant. oferta<input class="in" data-c="mant_oferta" value="${esc(c.mant_oferta || '')}"></label>
       <label class="f">Hoja (mes)<input class="in" data-c="hoja" value="${esc(hojaDe(c))}"></label>
+      <label class="f">Lista de costos<select class="in" id="cotLista">${opcionesLista(listaCot(c))}</select></label>
       <label class="f">Observaciones<input class="in" data-c="obs" value="${esc(c.obs || '')}"></label></div></div>
   <div class="kpis">
     <div class="kpi"><div class="l">Total cotizado</div><div class="v">${money(R.total)}</div><div class="s">${R.n} renglones</div></div>
@@ -676,6 +698,7 @@ function vCot(id) {
   </div>
   <div id="gh"></div>${AYUDA}`, { full: true });
   $$('[data-c]').forEach(el => el.onchange = async () => { const p = { [el.dataset.c]: el.value, updated_by: who() }; if (el.dataset.c === 'apertura') p.fecha = P.fechaDe(el.value) || c.fecha; Object.assign(c, await db.upd('cc_cotizaciones', c.id, p)); reindex(); toast('Guardado'); });
+  $('#cotLista').onchange = e => cambiarListaCot(c, e.target.value);
   const host = $('#gh'); host.style.height = 'calc(100vh - 150px)'; host.style.minHeight = '420px';
   const g = montarGrilla(host, () => [...(I.itemsByCot.get(id) || [])].sort(ordenPlanilla), { id: 'cot', sin: ['proceso', 'apertura', 'condicion'], procDef: () => c.proceso, hoja: hojaDe(c) });
   $('#actCost').onclick = () => actualizarCostos(c);
@@ -741,6 +764,37 @@ function agregarRenglon(c) {
   };
   $('#qq', o).oninput = busca; $('#qq', o).focus();
   $('#blank', o).onclick = () => nuevo({ detalle: '(nuevo renglón)' });
+}
+function cambiarListaCot(c, nueva) {
+  const its = I.itemsByCot.get(c.id) || [];
+  const dif = its.filter(i => (i.lista || '') !== nueva && i.codigo);
+  const enNueva = dif.filter(i => I.costo.get(String(i.codigo).trim() + '|' + nueva));
+  const o = modal(`<h2>Lista de costos: ${esc(nueva)}</h2>
+    <p class="sub">Los renglones nuevos de ${esc(c.proceso)} van a tomar los costos de <b>${esc(nueva)}</b>.</p>
+    ${dif.length ? `<label class="row" style="margin:10px 0"><input type="checkbox" id="lpasar" checked> Pasar también los <b>${dif.length}</b> renglones existentes a ${esc(nueva)} y actualizar sus costos</label>
+      <div style="margin-left:22px" id="lopc"><label class="row small"><input type="radio" name="lm" value="margen" checked> Mantener el margen (recalcula el precio)</label>
+      <label class="row small"><input type="radio" name="lm" value="precio"> Mantener el precio (recalcula el margen)</label>
+      ${dif.length - enNueva.length ? `<p class="small warn">${dif.length - enNueva.length} renglón(es) no están en ${esc(nueva)}: se dejan en su lista actual.</p>` : ''}</div>` : '<p class="small muted">Todos los renglones ya están en esa lista.</p>'}
+    <div class="row" style="margin-top:14px"><span class="spacer"></span><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Aplicar</button></div>`);
+  o.addEventListener('click', e => { if (e.target === o || e.target.closest('[data-close]')) { const sel = $('#cotLista'); if (sel) sel.value = listaCot(c); } });
+  $('#ok', o).onclick = async () => {
+    $('#ok', o).disabled = true;
+    Object.assign(c, await db.upd('cc_cotizaciones', c.id, { lista: nueva, updated_by: who() }));
+    let n = 0;
+    if (dif.length && $('#lpasar', o).checked) {
+      const modo = $('input[name=lm]:checked', o).value; const undo = [];
+      for (const it of enNueva) {
+        const k = I.costo.get(String(it.codigo).trim() + '|' + nueva);
+        const p = { lista: nueva, pvp: k.pvp, psl: k.psl, dtocpa: k.dtocpa, costo: k.costo };
+        const cm = P.costoMeta({ ...it, ...p });
+        if (modo === 'margen') p.precio_unit = P.precioDe(cm, it.margen); else p.margen = P.margenDe(cm, it.precio_unit);
+        undo.push({ t: 'item', id: it.id, before: pick(it, Object.keys(p)) });
+        Object.assign(it, await db.upd('cc_items', it.id, p)); n++;
+      }
+      if (undo.length) UNDO.push(undo);
+    }
+    o.remove(); reindex(); vCot(c.id); toast(`Lista ${nueva}${n ? ` · ${n} renglones actualizados` : ''}`);
+  };
 }
 function actualizarCostos(c) {
   const todos = (I.itemsByCot.get(c.id) || []).filter(it => { const ca = costoMetaAct(it), cc = costoMetaCot(it); return ca != null && cc && Math.abs(ca - cc) / cc > 0.001; });
@@ -816,12 +870,13 @@ function sugerirRenglon(r, C) {
   for (const s of P.sugerir(r.descripcion, C.base, 8)) if (!out.some(o => o.codigo === s.codigo)) out.push(s);
   return out.slice(0, 8);
 }
-function datosProducto(c) {
-  // datos vigentes del producto (costos de hoy si están cargados) + último margen usado
-  const k = I.costo.get(c.codigo + '|' + (c.lista || '')) || I.costoCod.get(c.codigo) || c;
-  return { codigo: c.codigo, lista: c.lista || k.lista || '', detalle: k.detalle || c.detalle, monodroga: k.monodroga || c.monodroga, laboratorio: k.laboratorio || c.laboratorio,
-    pvp: k.pvp ?? c.pvp, psl: k.psl ?? c.psl, dtocpa: k.dtocpa ?? c.dtocpa, costo: k.costo ?? c.costo, dcto_psl: c.fuente !== 'costos' ? c.dcto_psl ?? null : null, plazo: c.plazo ?? null,
-    margenPrev: c.fuente !== 'costos' ? c.margen : null, fechaPrev: c.fuente !== 'costos' ? c.fecha : null };
+function datosProducto(c, lista) {
+  // costos de HOY de la lista elegida para la cotización (si el producto no está en esa lista, queda sin costo) + último margen usado
+  const cod = String(c.codigo || '').trim();
+  const k = I.costo.get(cod + '|' + lista); const g = k || I.costoCod.get(cod) || c;
+  return { codigo: c.codigo, lista, detalle: g.detalle || c.detalle, monodroga: g.monodroga || c.monodroga, laboratorio: g.laboratorio || c.laboratorio,
+    pvp: k ? k.pvp : null, psl: k ? k.psl : null, dtocpa: k ? k.dtocpa : null, costo: k ? k.costo : null, dcto_psl: c.fuente !== 'costos' ? c.dcto_psl ?? null : null, plazo: c.plazo ?? null,
+    margenPrev: c.fuente !== 'costos' ? c.margen : null, fechaPrev: c.fuente !== 'costos' ? c.fecha : null, sinLista: !k, otras: k ? [] : listasDeCodigo(cod) };
 }
 const hojaDeFecha = f => f ? MESES_N[+f.slice(5, 7) - 1] + ' ' + f.slice(0, 4) : hojaActual();
 async function importarPedido(file) {
@@ -836,9 +891,10 @@ async function importarPedido(file) {
   if (existe) filas.forEach(f => { if (yaRen.has(f.r.renglon)) f.on = false; });
   const mant = (ped.terminos.match(/MANTENIMIENTO DE OFERTA\s*([^-]*)/i) || [])[1] || '';
   let modoMargen = 'ultimo';
+  let listaPed = existe ? listaCot(existe) : LISTA_DEF;
   const precioFila = f => {
     if (!f.sel) return { cm: null, m: null, p: null };
-    const d = datosProducto(f.sel); const cm = P.costoMeta(d);
+    const d = datosProducto(f.sel, listaPed); const cm = P.costoMeta(d);
     const m = modoMargen === 'ultimo' && d.margenPrev != null ? d.margenPrev : conf('margenObjetivo');
     return { d, cm, m, p: P.precioDe(cm, m) };
   };
@@ -848,7 +904,7 @@ async function importarPedido(file) {
     return `<tr data-i="${i}" style="${yaRen.has(f.r.renglon) ? 'opacity:.55' : ''}"><td class="c"><input type="checkbox" data-on ${f.on ? 'checked' : ''}></td><td class="n">${f.r.renglon}</td>
       <td class="wrap"><b>${esc(f.r.descripcion)}</b><div class="small muted">${esc(f.r.cod_cliente)} · ${esc(f.r.unidad || '')}${f.r.marcas ? ' · ' + esc(f.r.marcas) : ''}${yaRen.has(f.r.renglon) ? ' · <b>ya está en la cotización</b>' : ''}</div></td>
       <td class="n">${nf0.format(f.r.cantidad || 0)}</td>
-      <td><select class="in" data-sel style="max-width:300px;font-size:12.5px;padding:3px 6px">${f.sug.map((s, k) => `<option value="${k}" ${s === f.sel ? 'selected' : ''}>${esc(s.detalle)} · ${esc(s.codigo)}</option>`).join('')}<option value="-1" ${!f.sel ? 'selected' : ''}>— sin producto (cargar a mano) —</option></select><div style="margin-top:2px">${badge(f.sel)}</div></td>
+      <td><select class="in" data-sel style="max-width:300px;font-size:12.5px;padding:3px 6px">${f.sug.map((s, k) => `<option value="${k}" ${s === f.sel ? 'selected' : ''}>${esc(s.detalle)} · ${esc(s.codigo)}</option>`).join('')}<option value="-1" ${!f.sel ? 'selected' : ''}>— sin producto (cargar a mano) —</option></select><div style="margin-top:2px">${badge(f.sel)}${x.d && x.d.sinLista ? ` <span class="pill bad" title="${x.d.otras.length ? 'Está en: ' + esc(x.d.otras.join(', ')) : 'No está en los costos del cotizador'}">no está en ${esc(listaPed)}</span>` : ''}</div></td>
       <td class="n">${money(x.cm)}</td><td class="n">${x.m != null ? pct(x.m) : '—'}</td><td class="n"><b>${money(x.p)}</b></td>
       <td class="small">${u ? `${money(u.a.unitComp)} ${esc(P.canonProv(u.a.mejorComp.proveedor))}<div class="muted">${fdate(u.fecha)}</div>` : '<span class="muted">—</span>'}</td></tr>`;
   };
@@ -857,6 +913,7 @@ async function importarPedido(file) {
       <label class="f">Proceso<input class="in" id="pp" value="${esc(ped.proceso)}"></label>
       <label class="f">Apertura<input class="in" id="pa" value="${esc(ped.apertura)}"></label>
       <label class="f">Hoja<input class="in" id="ph" value="${esc(existe ? hojaDe(existe) : hojaDeFecha(ped.fecha))}"></label>
+      <label class="f">Lista de costos<select class="in" id="pl">${opcionesLista(listaPed)}</select></label>
       <label class="f">Condición<input class="in" id="pc" value="${esc(ped.pago)}"></label>
       <label class="f">Mant. oferta<input class="in" id="pm" value="${esc(mant.trim())}"></label>
       <label class="f">Observaciones<input class="in" id="po" value="${esc([ped.plan.replace(/\s*T\d+\s*E\d+\s*$/, ''), ped.observaciones].filter(Boolean).join(' · '))}"></label></div>
@@ -869,7 +926,7 @@ async function importarPedido(file) {
     <p class="legend">Revisá sobre todo los que no dicen “ya cotizado”. Los renglones sin producto se cargan igual (con la descripción del pedido) si los dejás tildados, para completarlos a mano en la planilla. Lo que elijas acá queda aprendido para el próximo pedido.</p>
     <div class="row" style="margin-top:12px"><span class="spacer"></span><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Crear cotización</button></div>`, { side: true });
   $('.drawer', o).style.width = 'min(1250px,100%)';
-  const cnt = () => { const n = filas.filter(f => f.on).length, s = filas.filter(f => f.on && f.sel).length; $('#cnt', o).innerHTML = `<b>${n}</b> de ${filas.length} renglones a cotizar · ${s} con producto · ${filas.filter(f => f.sel && f.sel.fuente === 'cliente').length} reconocidos de pedidos anteriores`; };
+  const cnt = () => { const n = filas.filter(f => f.on).length, s = filas.filter(f => f.on && f.sel).length; const nl = filas.filter(f => f.on && f.sel && !I.costo.get(String(f.sel.codigo).trim() + '|' + listaPed)).length; $('#cnt', o).innerHTML = `<b>${n}</b> de ${filas.length} renglones a cotizar · ${s} con producto · ${filas.filter(f => f.sel && f.sel.fuente === 'cliente').length} reconocidos de pedidos anteriores${nl ? ` · <span class="bad">${nl} sin costo en ${esc(listaPed)}</span>` : ''}`; };
   const redraw = i => { const tr = $(`tr[data-i="${i}"]`, o); tr.outerHTML = filaHTML(filas[i], i); cnt(); };
   $('#pt', o).addEventListener('change', e => {
     const i = +e.target.closest('tr').dataset.i; const f = filas[i];
@@ -877,6 +934,7 @@ async function importarPedido(file) {
     if (e.target.matches('[data-sel]')) { const k = +e.target.value; f.sel = k >= 0 ? f.sug[k] : null; if (f.sel) f.on = true; redraw(i); }
   });
   $$('input[name=mm]', o).forEach(r => r.onchange = () => { modoMargen = r.value; $('#pt', o).innerHTML = filas.map(filaHTML).join(''); });
+  $('#pl', o).onchange = e => { listaPed = e.target.value; $('#pt', o).innerHTML = filas.map(filaHTML).join(''); cnt(); };
   $('#todos', o).onclick = () => { filas.forEach(f => f.on = true); $('#pt', o).innerHTML = filas.map(filaHTML).join(''); cnt(); };
   $('#ninguno', o).onclick = () => { filas.forEach(f => f.on = false); $('#pt', o).innerHTML = filas.map(filaHTML).join(''); cnt(); };
   cnt();
@@ -887,14 +945,14 @@ async function importarPedido(file) {
       const proceso = $('#pp', o).value.trim() || ped.proceso || ('PEDIDO ' + ped.idPedido);
       const ap = $('#pa', o).value.trim(), hoja = $('#ph', o).value.trim().toUpperCase() || hojaDeFecha(ped.fecha);
       let cot = S.cots.find(c => P.norm(c.proceso) === P.norm(proceso));
-      const cab = { apertura: ap, fecha: P.fechaDe(ap) || ped.fecha, hoja, condicion: $('#pc', o).value.trim() || null, mant_oferta: $('#pm', o).value.trim() || null, obs: $('#po', o).value.trim() || null, cliente: 'ISSN', updated_by: who() };
+      const cab = { apertura: ap, fecha: P.fechaDe(ap) || ped.fecha, hoja, lista: listaPed, condicion: $('#pc', o).value.trim() || null, mant_oferta: $('#pm', o).value.trim() || null, obs: $('#po', o).value.trim() || null, cliente: 'ISSN', updated_by: who() };
       if (!cot) [cot] = await db.ins('cc_cotizaciones', [{ proceso, estado: 'abierta', ...cab }]);
       else Object.assign(cot, await db.upd('cc_cotizaciones', cot.id, { hoja, apertura: ap || cot.apertura, fecha: cab.fecha || cot.fecha }));
       if (!hojasGuardadas().includes(hoja)) await guardarHojas([...hojasGuardadas(), hoja]);
       const rows = sel.map(f => {
         const base = { cotizacion_id: cot.id, renglon: f.r.renglon, orden: f.r.renglon, cantidad: f.r.cantidad, cod_cliente: f.r.cod_cliente || null, desc_cliente: f.r.descripcion, obs: f.r.marcas && !/acepta alternativa/i.test(f.r.marcas) ? 'Marcas: ' + f.r.marcas : null };
-        if (!f.sel) return { ...base, detalle: f.r.descripcion, margen: conf('margenObjetivo') };
-        const x = precioFila(f); const { margenPrev, fechaPrev, ...d } = x.d;
+        if (!f.sel) return { ...base, lista: listaPed, detalle: f.r.descripcion, margen: conf('margenObjetivo') };
+        const x = precioFila(f); const { margenPrev, fechaPrev, sinLista, otras, ...d } = x.d;
         return { ...base, ...d, margen: x.m, precio_unit: x.p };
       });
       const ins = await db.ins('cc_items', rows);

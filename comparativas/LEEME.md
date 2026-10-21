@@ -64,7 +64,8 @@ En **Planilla** o **Cotizaciones**, tocá **Importar PDF**. También podés arra
    - **historial**: un producto de la misma droga y concentración que ya cotizaste.
    - **costos**: un producto de la lista de costos.
 3. Revisás, cambiás lo que haga falta con el desplegable y destildás lo que no vas a cotizar.
-4. **Crear cotización** arma la hoja con el costo de hoy y el último margen usado para cada producto, o el margen objetivo.
+4. Elegís la **Lista de costos** (ISSN_NQN por defecto): los costos salen solo de esa lista. Si un producto no está en ella, se marca "no está en …" y queda sin costo.
+5. **Crear cotización** arma la hoja con el costo de hoy y el último margen usado para cada producto, o el margen objetivo.
 
 Lo que elegís queda aprendido: el pedido del mes siguiente reconoce los mismos códigos MED y propone los mismos productos.
 
@@ -88,7 +89,8 @@ Es la pantalla principal. Tiene las mismas columnas que la hoja del Excel (R, CA
 
 - Se usa como Excel: flechas, escribir para reemplazar, F2 o doble click para editar, Enter/Tab, Ctrl+C / Ctrl+V desde y hacia Excel, Supr, Ctrl+Z, selección de rangos con suma y promedio abajo, filtro por columna, click en el título para ordenar, ancho de columnas arrastrando.
 - Las columnas celestes son fórmulas: la barra fx muestra la fórmula. Las amarillas son "en vivo": costo de hoy, control IGUAL/ACTUALIZAR, posición en el acta, mejor competidor, último ganador histórico y margen para ganar.
-- Al escribir un CODIGO se completan solos los datos desde Costos, igual que el BUSCARX del Excel.
+- **Lista de costos por cotización**: cada cotización tiene su lista (ISSN_NQN por defecto; se elige al crearla o importar el pedido y se cambia en su encabezado, con opción de pasar todos los renglones y recalcular). Los renglones nuevos toman esa lista. El costo se busca solo en la lista del renglón: si el producto no está, el control muestra **NO EN LISTA** y no se toma de otra. Cambiar la LISTA de un renglón actualiza su costo.
+- Al escribir un CODIGO se completan solos los datos desde Costos (de la lista de la cotización), igual que el BUSCARX del Excel.
 - **Hojas nuevas**: el botón ＋ a la izquierda de las pestañas crea una hoja y propone el mes siguiente (ej. NOVIEMBRE 2026). Doble click en una pestaña la renombra; con click derecho se renombra, se inserta otra o se elimina (solo si está vacía).
 - La última fila (＋) sirve para agregar renglones: toma el Proceso de la fila de arriba, o el que escribas. Si el proceso no existe, se crea.
 - Cambiar el Proceso de una fila la mueve a ese proceso.

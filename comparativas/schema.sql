@@ -25,6 +25,7 @@ create table if not exists cc_cotizaciones (
 );
 
 alter table cc_cotizaciones add column if not exists hoja text;
+alter table cc_cotizaciones add column if not exists lista text;   -- lista de costos del cotizador para los renglones nuevos (ISSN_NQN por defecto)
 
 -- ---------- Renglones cotizados ----------
 create table if not exists cc_items (
