@@ -47,11 +47,10 @@ En el repo `mateobengolea/cotizador` creá una carpeta `comparativas/` y subí t
    - 62 procesos y 1.959 renglones de las hojas de meses.
    - Los adjudicados de las hojas `OC …`.
    - 439 resultados históricos de la hoja `COMPARATIVAS`.
-   - Los costos iniciales de la hoja `VLOOKUP`.
    
    Si se vuelve a correr no duplica nada: los procesos que ya existen se saltean.
 3. **Comparativas →** arrastrá el PDF del acta. Se lee directo, sin convertirlo antes, y se vincula sola con la cotización por número de expediente.
-4. **Costos**: se toman **solos del cotizador** (los precios por lista que se suben ahí cada día con `precios_combinado.csv`, más marca, laboratorio, PVP y stock de la Base de marcas). Se leen al abrir la página y con ⟳; no hace falta cargar nada acá. La carga manual queda como respaldo: arrastrá el archivo de costos del día. Detecta solas las columnas CODIGO, COSTO, LISTA/LISTAPRE, PSL, PVP, DTOCPA, etc. Sirve `precios_combinado.csv`, el `PRECIOS.XLSX` crudo o la hoja VLOOKUP.
+4. **Costos**: se toman **solos del cotizador** (los precios por lista que se suben ahí cada día con `precios_combinado.csv`, más marca, laboratorio, PVP y stock de la Base de marcas). Se leen al abrir la página, con ⟳ o con *Releer del cotizador* en la pestaña Costos. No hay carga manual.
 
 > Si `config.js` queda vacío, la página arranca en **modo demo**: los datos se guardan solo en ese navegador. Sirve para probar sin tocar la base.
 

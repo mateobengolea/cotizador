@@ -73,7 +73,7 @@ async function cargarCostosCotizador() {
 }
 function armarCatalogo() {
   // Une: precios por lista del cotizador (fuente principal) + datos del catálogo del cotizador + costos manuales como respaldo
-  const usar = conf('fuenteCostos') !== 'manual' && S.cot && S.cot.ok;
+  const usar = S.cot && S.cot.ok;   // fuente única: el cotizador (si no se puede leer, quedan los últimos costos guardados)
   const man = new Map(); for (const c of S.costos) man.set(c.codigo + '|' + c.lista, c);
   const manCod = new Map(); for (const c of S.costos) if (!manCod.has(c.codigo)) manCod.set(c.codigo, c);
   if (!usar) { S.cat = S.costos; return; }
@@ -87,7 +87,6 @@ function armarCatalogo() {
     out.push({ codigo, lista, detalle: b.marca || m.detalle || '', monodroga: b.monodroga || m.monodroga || '', laboratorio: b.laboratorio || m.laboratorio || '',
       pvp: b.pvp ?? m.pvp ?? null, psl: p.psl ?? null, dtocpa: p.descuento ?? null, costo: p.costo, stockCot: b.stock ?? null, actualizado: S.cot.updated, fuente: 'cotizador' });
   }
-  for (const c of S.costos) if (!vistos.has(c.codigo + '|' + c.lista)) out.push({ ...c, fuente: 'manual' });
   S.cat = out;
 }
 async function loadAll() {
@@ -1228,48 +1227,17 @@ function vCostos() {
   const q = P.norm(qCost);
   const hits = q.length >= 2 ? S.cat.filter(k => P.norm(k.codigo + ' ' + k.detalle + ' ' + k.monodroga + ' ' + k.laboratorio).includes(q)).slice(0, 300) : [];
   const fCot = S.cot && S.cot.updated ? new Date(S.cot.updated).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
-  const usandoCot = S.cot && S.cot.ok && conf('fuenteCostos') !== 'manual';
+  const usandoCot = S.cot && S.cot.ok;
   shell(`<h1>Costos vigentes</h1><div class="sub" style="margin-bottom:12px">Se usan para el “costo actual” y el “margen p/ganar” de todas las pantallas.</div>
-  <div class="card"><div class="row"><div><b>Fuente: ${usandoCot ? 'Cotizador (automático)' : 'Carga manual'}</b>
-    <div class="small muted">${S.cot && S.cot.ok ? `Precios por lista del cotizador: ${nf0.format(S.cot.lista.length)} · última carga en el cotizador: <b>${fCot}</b> — se leen solos al abrir la página y con ⟳.` : S.cot && S.cot.error ? `No pude leer los costos del cotizador (${esc(S.cot.error)}).` : DEMO ? 'En modo demo no se conecta al cotizador.' : 'El cotizador todavía no tiene precios por lista cargados.'}
-    ${usandoCot ? '<br>Los códigos o listas que no estén en el cotizador se completan con la carga manual (si hay).' : ''}</div></div><span class="spacer"></span>
-    ${S.cot && S.cot.ok ? `<label class="small row" style="gap:6px"><input type="checkbox" id="fuenteCot" ${usandoCot ? 'checked' : ''}> Usar costos del cotizador</label>` : ''}</div></div>
-  <details class="card"><summary class="small" style="cursor:pointer"><b>Carga manual de costos</b> (respaldo, normalmente no hace falta)</summary><div style="margin-top:10px"><div class="drop" id="drop"><b>Cargar archivo de costos</b><br><span class="small">Excel o CSV con columnas CODIGO y COSTO (y si están: LISTA/LISTAPRE, DETALLE, MONODROGA, LABORATORIO, PVP, PSL, DTOCPA). Detecta la fila de encabezados sola.</span></div></div></details>
+  <div class="card"><div class="row"><div><b>Fuente: Cotizador (automático)${usandoCot ? '' : ' — <span class="bad">no disponible ahora</span>'}</b>
+    <div class="small muted">${S.cot && S.cot.ok ? `Precios por lista del cotizador: ${nf0.format(S.cot.lista.length)} · última carga en el cotizador: <b>${fCot}</b> — se leen solos al abrir la página y con ⟳.` : S.cot && S.cot.error ? `No pude leer los costos del cotizador (${esc(S.cot.error)}). Mientras tanto se usan los últimos costos guardados; probá de nuevo con ⟳.` : DEMO ? 'En modo demo no se conecta al cotizador.' : 'El cotizador todavía no tiene precios por lista cargados.'}</div></div><span class="spacer"></span><button class="btn" id="recot">⟳ Releer del cotizador</button></div></div>
   <div class="kpis">${Object.entries(porLista).map(([l, v]) => `<div class="kpi"><div class="l">${esc(l)}</div><div class="v">${nf0.format(v.n)}</div><div class="s">act. ${v.f ? new Date(v.f).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</div></div>`).join('') || '<div class="kpi"><div class="l">Sin costos cargados</div><div class="v">0</div></div>'}</div>
-  <div class="row" style="margin-bottom:10px"><input class="in" id="q" placeholder="Buscar código, producto, monodroga, laboratorio…" value="${esc(qCost)}" style="width:min(420px,100%)"><span class="spacer"></span>
-    <span class="small muted">Últimas cargas: ${S.cargas.slice(-3).reverse().map(c => `${esc(c.archivo)} (${nf0.format(c.filas)} filas, ${new Date(c.created_at).toLocaleDateString('es-AR')}${c.usuario ? ', ' + esc(c.usuario) : ''})`).join(' · ') || '—'}</span></div>
+  <div class="row" style="margin-bottom:10px"><input class="in" id="q" placeholder="Buscar código, producto, monodroga, laboratorio…" value="${esc(qCost)}" style="width:min(420px,100%)"></div>
   ${q.length >= 2 ? `<div class="tw"><table class="t"><thead><tr><th>Código</th><th>Producto</th><th>Monodroga</th><th>Laboratorio</th><th>Lista</th><th class="n">PVP</th><th class="n">PSL</th><th class="n">Dto.</th><th class="n">Costo</th></tr></thead><tbody>
     ${hits.map(k => `<tr><td>${esc(k.codigo)}</td><td>${esc(k.detalle)}</td><td>${esc(k.monodroga)}</td><td class="small">${esc(k.laboratorio)}</td><td>${esc(k.lista)}</td><td class="n">${money(k.pvp)}</td><td class="n">${money(k.psl)}</td><td class="n">${k.dtocpa ?? ''}</td><td class="n"><b>${money(k.costo)}</b></td></tr>`).join('') || '<tr><td colspan="9" class="muted">Sin resultados.</td></tr>'}</tbody></table></div>` : ''}`);
-  dropZone($('#drop'), '.xlsx,.xls,.csv', cargarCostos);
-  if ($('#fuenteCot')) $('#fuenteCot').onchange = async e => { await db.ups('cc_config', [{ clave: 'fuenteCostos', valor: e.target.checked ? 'cotizador' : 'manual' }], ['clave']); S.cfg.fuenteCostos = e.target.checked ? 'cotizador' : 'manual'; armarCatalogo(); reindex(); vCostos(); toast('Fuente de costos actualizada'); };
+  $('#recot').onclick = async () => { $('#recot').disabled = true; S.cot = await cargarCostosCotizador(); armarCatalogo(); reindex(); vCostos(); toast(S.cot && S.cot.ok ? 'Costos actualizados desde el cotizador' : 'No se pudo leer el cotizador'); };
   const inp = $('#q'); let h; inp.oninput = () => { clearTimeout(h); h = setTimeout(() => { qCost = inp.value; vCostos(); const n = $('#q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 200); };
 }
-async function cargarCostos(file) {
-  let wb; try { wb = await readWb(file); } catch (e) { return toast('No pude leer el archivo: ' + e.message, 5000); }
-  const r = P.parseCostos(XLSX, wb, '');
-  if (!r.filas.length) return toast('No encontré columnas CODIGO y COSTO en el archivo', 5000);
-  const sinLista = r.filas.some(f => !f.lista);
-  const o = modal(`<h2>Cargar costos</h2><p class="sub">${esc(file.name)} · hoja “${esc(r.hoja)}”</p>
-    <p><b>${nf0.format(r.filas.length)}</b> productos. Columnas detectadas: ${Object.entries(r.columnas).map(([k, v]) => `<span class="pill info">${k} ← ${esc(v)}</span>`).join(' ')}</p>
-    <p>Listas en el archivo: ${r.listas.filter(Boolean).map(l => `<span class="pill">${esc(l)}</span>`).join(' ') || '—'}</p>
-    ${sinLista ? `<label class="f">El archivo no trae lista: ¿a qué lista corresponde?<input class="in" id="lst" value="ISSN_NQN"></label>` : ''}
-    <label class="row" style="margin-top:10px"><input type="checkbox" id="purge" checked> Borrar productos de esas listas que no vengan en este archivo</label>
-    <div class="row" style="margin-top:16px"><span class="spacer"></span><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Cargar</button></div>`);
-  $('#ok', o).onclick = async () => {
-    $('#ok', o).disabled = true; $('#ok', o).innerHTML = '<span class="spin"></span> Cargando';
-    try {
-      const lst = $('#lst', o)?.value.trim() || '';
-      const ts = new Date().toISOString();
-      const filas = r.filas.map(f => ({ ...f, lista: f.lista || lst, actualizado: ts }));
-      const listas = [...new Set(filas.map(f => f.lista))];
-      await db.ups('cc_costos', filas, ['codigo', 'lista']);
-      if ($('#purge', o).checked) await db.delStaleCostos(listas, ts);
-      await db.ins('cc_cargas_costos', [{ archivo: file.name, filas: filas.length, listas: listas.join(', '), usuario: who() }]);
-      await loadAll(); o.remove(); vCostos(); toast(`${nf0.format(filas.length)} costos cargados`);
-    } catch (e) { toast('Error: ' + e.message, 6000); $('#ok', o).disabled = false; $('#ok', o).textContent = 'Cargar'; }
-  };
-}
-
 // ======================================================================
 //  Resumen
 // ======================================================================
@@ -1293,7 +1261,7 @@ function vResumen() {
   <div class="kpis"><div class="kpi"><div class="l">Renglones cotizados con resultado</div><div class="v">${conAna.length}</div></div>
     <div class="kpi"><div class="l">Salimos 1°</div><div class="v ok">${gan.length}</div><div class="s">${conAna.length ? pct(gan.length / conAna.length, 0) : ''}</div></div>
     <div class="kpi"><div class="l">Perdidos por &lt; ${pct(conf('cercania'), 0)}</div><div class="v warn">${cerca.length}</div><div class="s">los más fáciles de dar vuelta</div></div>
-    <div class="kpi"><div class="l">Costos cargados</div><div class="v">${nf0.format(S.cat.length)}</div><div class="s">${S.cot && S.cot.ok && conf('fuenteCostos') !== 'manual' ? 'del cotizador' : 'carga manual'}</div></div></div>
+    <div class="kpi"><div class="l">Costos cargados</div><div class="v">${nf0.format(S.cat.length)}</div><div class="s">${S.cot && S.cot.ok ? 'del cotizador' : 'últimos guardados'}</div></div></div>
   <div class="card"><h2>Quién nos gana</h2><div class="tw" style="max-height:none"><table class="t"><tr><th>Competidor</th><th class="n">Ofertas vistas</th><th>Veces que fue mejor que nosotros</th><th class="n">Por cuánto (mediana)</th></tr>
   ${lista.slice(0, 25).map(c => `<tr><td><b>${esc(c.n)}</b></td><td class="n">${c.ofertas}</td><td><div class="row" style="gap:8px;flex-wrap:nowrap"><div class="bar" style="width:160px"><i style="width:${100 * c.nosGana / maxN}%"></i></div>${c.nosGana}</div></td><td class="n">${c.dif.length ? pct(med(c.dif)) : '—'}</td></tr>`).join('')}</table></div>
   <p class="legend">“Por cuánto”: cuánto más caro estuvo nuestro precio unitario respecto del suyo, en los renglones que perdimos contra él.</p></div>
@@ -1307,7 +1275,7 @@ function vResumen() {
 function vImportar() {
   shell(`<h1>Importar / Ajustes</h1>
   <div class="card"><h2>1 · Importar el Excel acumulado (una sola vez)</h2>
-    <p class="sub">Lee las hojas de meses (ENERO…DICIEMBRE) como cotizaciones, las hojas “OC …” para marcar renglones adjudicados, la hoja COMPARATIVAS como resultados históricos y la hoja VLOOKUP como costos iniciales. Los procesos que ya existen en la web se saltean, así que se puede repetir sin duplicar.</p>
+    <p class="sub">Lee las hojas de meses (ENERO…DICIEMBRE) como cotizaciones, las hojas “OC …” para marcar renglones adjudicados, la hoja COMPARATIVAS como resultados históricos Los procesos que ya existen en la web se saltean, así que se puede repetir sin duplicar.</p>
     <div class="drop" id="drop"><b>Arrastrá “Acumulado - Cotizaciones Directas 2026.xlsx”</b><br><span class="small">o hacé click para elegirlo</span></div><div id="prev"></div></div>
   <div class="card"><h2>2 · Ajustes</h2><div class="grid2">
     <label class="f">Margen objetivo (verde a partir de)<input class="in" id="mo" value="${+(conf('margenObjetivo') * 100).toFixed(2)}"></label>
@@ -1341,8 +1309,7 @@ async function previewHistorico(file) {
   $('#prev').innerHTML = `<div class="card" style="margin-top:12px;box-shadow:none"><p><b>${A.cotizaciones.length}</b> procesos en el Excel → <b>${nuevas.length}</b> nuevos (${nIt} renglones), ${A.cotizaciones.length - nuevas.length} ya cargados.</p>
     <p>Hojas OC: ${A.ocOk} renglones marcados como adjudicados.${A.avisos.map(a => `<br><span class="warn small">${esc(a)}</span>`).join('')}</p>
     <p>Hoja COMPARATIVAS: ${A.hist.length} resultados de ${procsHist.length} procesos → ${histNuevos.length} por importar.</p>
-    <p>Costos (hoja ${esc(C.hoja || '—')}): ${C.filas.length} productos <label class="row" style="display:inline-flex"><input type="checkbox" id="wc" ${S.costos.length || (S.cot && S.cot.ok) ? '' : 'checked'}> importarlos también</label></p>
-    <button class="btn pri" id="go" ${nuevas.length || histNuevos.length || C.filas.length ? '' : 'disabled'}>Importar</button> <span id="st" class="small"></span></div>`;
+    <button class="btn pri" id="go" ${nuevas.length || histNuevos.length ? '' : 'disabled'}>Importar</button> <span id="st" class="small"></span></div>`;
   $('#go').onclick = async () => {
     const st = m => $('#st').innerHTML = '<span class="spin"></span> ' + m;
     $('#go').disabled = true;
@@ -1384,7 +1351,6 @@ async function previewHistorico(file) {
         if (ofs.length) await db.ins('cc_comp_ofertas', ofs);
       }
       // 3. costos
-      if ($('#wc').checked && C.filas.length) { st('Cargando costos…'); const ts = new Date().toISOString(); await db.ups('cc_costos', C.filas.map(f => ({ ...f, actualizado: ts })), ['codigo', 'lista']); await db.ins('cc_cargas_costos', [{ archivo: file.name + ' (VLOOKUP)', filas: C.filas.length, listas: C.listas.join(', '), usuario: who() }]); }
       await loadAll();
       $('#st').innerHTML = '<span class="ok">Listo ✔</span>'; toast('Importación terminada'); setTimeout(() => location.hash = '#cotizaciones', 900);
     } catch (e) { $('#st').innerHTML = `<span class="bad">Error: ${esc(e.message)}</span>`; $('#go').disabled = false; }
