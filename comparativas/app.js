@@ -224,7 +224,7 @@ function modal(html, { side = false } = {}) {
   o.innerHTML = `<div class="${side ? 'drawer' : 'modal'}"><button class="x" data-close>×</button>${html}</div>`;
   o.addEventListener('click', e => { if (e.target === o || e.target.closest('[data-close]')) o.remove(); });
   document.body.appendChild(o);
-  const k = e => { if (e.key === 'Escape') { o.remove(); document.removeEventListener('keydown', k); } }; document.addEventListener('keydown', k);
+  const k = e => { if (!o.isConnected) return document.removeEventListener('keydown', k); if (e.key === 'Escape') { const ov = document.querySelectorAll('body > .overlay'); if (ov[ov.length - 1] !== o) return; o.remove(); document.removeEventListener('keydown', k); } }; document.addEventListener('keydown', k);
   return o;
 }
 function pickFile(accept, cb) { const f = document.createElement('input'); f.type = 'file'; f.accept = accept; f.onchange = () => f.files[0] && cb(f.files[0]); f.click(); }
@@ -285,13 +285,17 @@ function nuevaCot() {
     <label class="f">Proceso / expediente<input class="in" id="np" placeholder="EXPTE 251500" required></label>
     <label class="f">Apertura<input class="in" id="na" placeholder="dd/mm/aaaa - 10:00hs"></label>
     <label class="f">Cliente<input class="in" id="nc" value="ISSN"></label>
-    <label class="f">Lista de costos<select class="in" id="nl">${opcionesLista(LISTA_DEF)}</select></label></div>
+    <label class="f">Lista de costos<select class="in" id="nl">${opcionesLista(LISTA_DEF)}</select></label>
+    <label class="f">Hoja${selectHoja('nh')}</label></div>
     <div class="row" style="margin-top:16px"><span class="spacer"></span><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Crear</button></div>`);
+  activarSelectHoja($('#nh', o));
   $('#ok', o).onclick = async () => {
     const proceso = $('#np', o).value.trim(); if (!proceso) return;
+    const hoja = $('#nh', o).value;
     if (S.cots.some(c => P.norm(c.proceso) === P.norm(proceso))) return toast('Ese proceso ya existe');
     const ap = $('#na', o).value.trim();
-    const [c] = await db.ins('cc_cotizaciones', [{ proceso, apertura: ap, fecha: P.fechaDe(ap) || new Date().toISOString().slice(0, 10), hoja: hojaActual(), cliente: $('#nc', o).value.trim(), lista: $('#nl', o).value, estado: 'abierta', updated_by: who() }]);
+    const [c] = await db.ins('cc_cotizaciones', [{ proceso, apertura: ap, fecha: P.fechaDe(ap) || new Date().toISOString().slice(0, 10), hoja, cliente: $('#nc', o).value.trim(), lista: $('#nl', o).value, estado: 'abierta', updated_by: who() }]);
+    if (!hojasGuardadas().includes(hoja)) await guardarHojas([...hojasGuardadas(), hoja]);
     S.cots.push(c); reindex(); o.remove(); location.hash = '#cot/' + c.id;
   };
 }
@@ -580,12 +584,33 @@ function pedirNombre(titulo, valor, cb) {
   const go = async () => { const v = inp.value.trim().toUpperCase().replace(/\s+/g, ' '); if (!v) return; if (ESPECIALES(v)) return toast('Ese nombre está reservado'); o.remove(); await cb(v); };
   $('#ok', o).onclick = go; inp.onkeydown = e => { if (e.key === 'Enter') go(); };
 }
-function vPlanilla(tab) {
+// hojas de la planilla, la más nueva primero
+function listaHojas() {
   const hojas = new Map();
   for (const h of hojasGuardadas()) hojas.set(h, '');
   for (const c of S.cots) { const h = hojaDe(c); if (!hojas.get(h) || String(c.fecha || '') > hojas.get(h)) hojas.set(h, String(c.fecha || '')); }
   const clave = h => { const m = h.match(/^([A-Z]+) (\d{4})$/); const i = m ? MESES_N.indexOf(m[1]) : -1; return i >= 0 ? `${m[2]}-${String(i + 1).padStart(2, '0')}-99` : (hojas.get(h) || '9999'); };
-  const lista = [...hojas.keys()].sort((a, b) => clave(b).localeCompare(clave(a)));
+  return [...hojas.keys()].sort((a, b) => clave(b).localeCompare(clave(a)));
+}
+// desplegable de hojas (sin escribir): la más nueva por defecto + opción de crear una hoja nueva
+function selectHoja(id, sel) {
+  const l = listaHojas(); if (sel && !l.includes(sel)) l.unshift(sel);
+  const s = sel || l[0] || hojaActual();
+  return `<select class="in" id="${id}">${(l.length ? l : [s]).map(h => `<option ${h === s ? 'selected' : ''}>${esc(h)}</option>`).join('')}<option value="__nueva">＋ Hoja nueva…</option></select>`;
+}
+function activarSelectHoja(sel) {
+  let prev = sel.value;
+  sel.addEventListener('change', () => {
+    if (sel.value !== '__nueva') { prev = sel.value; return; }
+    sel.value = prev;
+    pedirNombre('Nueva hoja', siguienteHoja(listaHojas()), async v => {
+      if (![...sel.options].some(op => op.value === v)) { const op = new Option(v, v); sel.insertBefore(op, sel.options[0]); }
+      sel.value = prev = v;
+    });
+  });
+}
+function vPlanilla(tab) {
+  const lista = listaHojas();
   const ocs = [...new Set([...S.items.flatMap(i => ocsDe(i)), ...S.ocs.map(o => String(o.numero))])].sort((a, b) => (+b || 0) - (+a || 0));
   tab = tab || lista[0] || 'TODAS';
   const rowsFn = () => {
@@ -959,7 +984,7 @@ async function importarPedido(file) {
     <div class="grid2" style="margin:10px 0">
       <label class="f">Proceso<input class="in" id="pp" value="${esc(ped.proceso)}"></label>
       <label class="f">Apertura<input class="in" id="pa" value="${esc(ped.apertura)}"></label>
-      <label class="f">Hoja<input class="in" id="ph" value="${esc(existe ? hojaDe(existe) : hojaDeFecha(ped.fecha))}"></label>
+      <label class="f">Hoja${selectHoja('ph', existe ? hojaDe(existe) : null)}</label>
       <label class="f">Lista de costos<select class="in" id="pl">${opcionesLista(listaPed)}</select></label>
       <label class="f">Condición<input class="in" id="pc" value="${esc(ped.pago)}"></label>
       <label class="f">Mant. oferta<input class="in" id="pm" value="${esc(mant.trim())}"></label>
@@ -973,6 +998,7 @@ async function importarPedido(file) {
     <p class="legend">Revisá sobre todo los que no dicen “ya cotizado”. Los renglones sin producto se cargan igual (con la descripción del pedido) si los dejás tildados, para completarlos a mano en la planilla. Lo que elijas acá queda aprendido para el próximo pedido.</p>
     <div class="row" style="margin-top:12px"><span class="spacer"></span><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Crear cotización</button></div>`, { side: true });
   $('.drawer', o).style.width = 'min(1250px,100%)';
+  activarSelectHoja($('#ph', o));
   const cnt = () => { const n = filas.filter(f => f.on).length, s = filas.filter(f => f.on && f.sel).length; const nl = filas.filter(f => f.on && f.sel && !I.costo.get(String(f.sel.codigo).trim() + '|' + listaPed)).length; $('#cnt', o).innerHTML = `<b>${n}</b> de ${filas.length} renglones a cotizar · ${s} con producto · ${filas.filter(f => f.sel && f.sel.fuente === 'cliente').length} reconocidos de pedidos anteriores${nl ? ` · <span class="bad">${nl} sin costo en ${esc(listaPed)}</span>` : ''}`; };
   const redraw = i => { const tr = $(`tr[data-i="${i}"]`, o); tr.outerHTML = filaHTML(filas[i], i); cnt(); };
   $('#pt', o).addEventListener('change', e => {
@@ -998,7 +1024,7 @@ async function importarPedido(file) {
     const btn = $('#ok', o); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Creando';
     try {
       const proceso = $('#pp', o).value.trim() || ped.proceso || ('PEDIDO ' + ped.idPedido);
-      const ap = $('#pa', o).value.trim(), hoja = $('#ph', o).value.trim().toUpperCase() || hojaDeFecha(ped.fecha);
+      const ap = $('#pa', o).value.trim(), hoja = $('#ph', o).value;
       let cot = S.cots.find(c => P.norm(c.proceso) === P.norm(proceso));
       const cab = { apertura: ap, fecha: P.fechaDe(ap) || ped.fecha, hoja, lista: listaPed, condicion: $('#pc', o).value.trim() || null, mant_oferta: $('#pm', o).value.trim() || null, obs: $('#po', o).value.trim() || null, cliente: 'ISSN', updated_by: who() };
       // la cotización pudo haberse borrado (en otra pestaña o por otro usuario) después de abrir este pedido: si ya no existe, se crea de nuevo
