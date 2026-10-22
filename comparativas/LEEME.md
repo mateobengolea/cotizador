@@ -64,7 +64,7 @@ En **Planilla** o **Cotizaciones**, tocá **Importar PDF**. También podés arra
    - **ya cotizado**: el mismo código MED o la misma descripción que ya cotizaste antes. Es la sugerencia más segura.
    - **historial**: un producto de la misma droga y concentración que ya cotizaste.
    - **costos**: un producto de la lista de costos.
-3. Revisás, cambiás lo que haga falta con el desplegable y destildás lo que no vas a cotizar.
+3. Revisás, cambiás lo que haga falta con el desplegable y destildás lo que no vas a cotizar. Si el producto no está entre las sugerencias (o dice *sin producto*), tocá **🔍** (o *Buscar otro producto…* en el desplegable) y buscalo por código, nombre, droga o laboratorio en todo el catálogo del cotizador.
 4. Elegís la **Lista de costos** (ISSN_NQN por defecto): los costos salen solo de esa lista. Si un producto no está en ella, se marca "no está en …" y queda sin costo.
 5. **Crear cotización** arma la hoja con el costo de hoy y el último margen usado para cada producto, o el margen objetivo.
 

@@ -878,6 +878,33 @@ function datosProducto(c, lista) {
     pvp: k ? k.pvp : null, psl: k ? k.psl : null, dtocpa: k ? k.dtocpa : null, costo: k ? k.costo : null, dcto_psl: c.fuente !== 'costos' ? c.dcto_psl ?? null : null, plazo: c.plazo ?? null,
     margenPrev: c.fuente !== 'costos' ? c.margen : null, fechaPrev: c.fuente !== 'costos' ? c.fecha : null, sinLista: !k, otras: k ? [] : listasDeCodigo(cod) };
 }
+// buscador de productos para vincular a mano un renglón de pedido (código, nombre, droga o laboratorio)
+function buscarProducto(base, lista, texto, cb) {
+  let elegido = false;
+  const m = modal(`<h2>Buscar producto</h2><p class="sub">Renglón: <b>${esc(texto)}</b></p>
+    <input class="in" id="bq" placeholder="Código, nombre, droga o laboratorio…" style="width:100%;margin:8px 0" autocomplete="off">
+    <div class="tw" style="max-height:55vh"><table class="t"><thead><tr><th>Código</th><th>Producto</th><th>Droga</th><th>Laboratorio</th><th class="n">Costo ${esc(lista)}</th><th>Origen</th></tr></thead><tbody id="br"></tbody></table></div>
+    <p class="legend">Enter elige el primero · Esc vuelve sin cambiar.</p>`);
+  $('.modal', m).style.width = 'min(980px,96vw)';
+  let res = [];
+  const pinta = () => {
+    const q = $('#bq', m).value.trim(); const ws = P.norm(q).split(/\s+/).filter(Boolean);
+    if (!ws.length) res = P.sugerir(texto, base, 30);
+    else {
+      const qc = q.replace(/\s/g, '');
+      res = base.filter(b => String(b.codigo).trim() === qc || (() => { const h = P.norm([b.codigo, b.detalle, b.monodroga, b.laboratorio].join(' ')); return ws.every(w => h.includes(w)); })())
+        .map(b => ({ b, k: (String(b.codigo).trim() === qc ? 0 : 2) - (I.costo.get(String(b.codigo).trim() + '|' + lista) ? 1 : 0) }))
+        .sort((x, y) => x.k - y.k || String(x.b.detalle).localeCompare(String(y.b.detalle))).slice(0, 80).map(x => x.b);
+    }
+    $('#br', m).innerHTML = res.map((b, k) => { const c = I.costo.get(String(b.codigo).trim() + '|' + lista); return `<tr data-k="${k}" style="cursor:pointer"><td>${esc(b.codigo)}</td><td class="wrap"><b>${esc(b.detalle || '')}</b></td><td class="small">${esc(b.monodroga || '')}</td><td class="small">${esc(b.laboratorio || '')}</td><td class="n">${c ? money(c.costo) : '<span class="muted">no está</span>'}</td><td class="small muted">${b.fuente === 'hist' ? 'historial' : 'costos'}</td></tr>`; }).join('') || '<tr><td colspan="6" class="muted">Sin resultados</td></tr>';
+  };
+  const pick = b => { elegido = true; m.remove(); cb(b); };
+  $('#bq', m).addEventListener('input', pinta);
+  $('#bq', m).addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); elegido = true; m.remove(); cb(null); } if (e.key === 'Enter' && res[0]) pick(res[0]); });
+  $('#br', m).addEventListener('click', e => { const tr = e.target.closest('tr[data-k]'); if (tr) pick(res[+tr.dataset.k]); });
+  new MutationObserver((_, ob) => { if (!m.isConnected) { ob.disconnect(); if (!elegido) cb(null); elegido = true; } }).observe(document.body, { childList: true });
+  pinta(); setTimeout(() => $('#bq', m).focus(), 30);
+}
 const hojaDeFecha = f => f ? MESES_N[+f.slice(5, 7) - 1] + ' ' + f.slice(0, 4) : hojaActual();
 async function importarPedido(file) {
   toast('Leyendo el pedido…');
@@ -904,7 +931,7 @@ async function importarPedido(file) {
     return `<tr data-i="${i}" style="${yaRen.has(f.r.renglon) ? 'opacity:.55' : ''}"><td class="c"><input type="checkbox" data-on ${f.on ? 'checked' : ''}></td><td class="n">${f.r.renglon}</td>
       <td class="wrap"><b>${esc(f.r.descripcion)}</b><div class="small muted">${esc(f.r.cod_cliente)} · ${esc(f.r.unidad || '')}${f.r.marcas ? ' · ' + esc(f.r.marcas) : ''}${yaRen.has(f.r.renglon) ? ' · <b>ya está en la cotización</b>' : ''}</div></td>
       <td class="n">${nf0.format(f.r.cantidad || 0)}</td>
-      <td><select class="in" data-sel style="max-width:300px;font-size:12.5px;padding:3px 6px">${f.sug.map((s, k) => `<option value="${k}" ${s === f.sel ? 'selected' : ''}>${esc(s.detalle)} · ${esc(s.codigo)}</option>`).join('')}<option value="-1" ${!f.sel ? 'selected' : ''}>— sin producto (cargar a mano) —</option></select><div style="margin-top:2px">${badge(f.sel)}${x.d && x.d.sinLista ? ` <span class="pill bad" title="${x.d.otras.length ? 'Está en: ' + esc(x.d.otras.join(', ')) : 'No está en los costos del cotizador'}">no está en ${esc(listaPed)}</span>` : ''}</div></td>
+      <td><select class="in" data-sel style="max-width:300px;font-size:12.5px;padding:3px 6px">${f.sug.map((s, k) => `<option value="${k}" ${s === f.sel ? 'selected' : ''}>${esc(s.detalle)} · ${esc(s.codigo)}</option>`).join('')}<option value="-2">🔍 Buscar otro producto…</option><option value="-1" ${!f.sel ? 'selected' : ''}>— sin producto (cargar a mano) —</option></select> <button class="btn sm" data-bus title="Buscar en la lista de costos por código, nombre, droga o laboratorio">🔍</button><div style="margin-top:2px">${badge(f.sel)}${x.d && x.d.sinLista ? ` <span class="pill bad" title="${x.d.otras.length ? 'Está en: ' + esc(x.d.otras.join(', ')) : 'No está en los costos del cotizador'}">no está en ${esc(listaPed)}</span>` : ''}</div></td>
       <td class="n">${money(x.cm)}</td><td class="n">${x.m != null ? pct(x.m) : '—'}</td><td class="n"><b>${money(x.p)}</b></td>
       <td class="small">${u ? `${money(u.a.unitComp)} ${esc(P.canonProv(u.a.mejorComp.proveedor))}<div class="muted">${fdate(u.fecha)}</div>` : '<span class="muted">—</span>'}</td></tr>`;
   };
@@ -931,8 +958,16 @@ async function importarPedido(file) {
   $('#pt', o).addEventListener('change', e => {
     const i = +e.target.closest('tr').dataset.i; const f = filas[i];
     if (e.target.matches('[data-on]')) { f.on = e.target.checked; cnt(); return; }
-    if (e.target.matches('[data-sel]')) { const k = +e.target.value; f.sel = k >= 0 ? f.sug[k] : null; if (f.sel) f.on = true; redraw(i); }
+    if (e.target.matches('[data-sel]')) { const k = +e.target.value; if (k === -2) return elegirAMano(i); f.sel = k >= 0 ? f.sug[k] : null; if (f.sel) f.on = true; redraw(i); }
   });
+  $('#pt', o).addEventListener('click', e => { if (e.target.matches('[data-bus]')) elegirAMano(+e.target.closest('tr').dataset.i); });
+  const elegirAMano = i => {
+    const f = filas[i];
+    buscarProducto(C.base, listaPed, f.r.descripcion, s => {
+      if (s) { const ya = f.sug.find(x => x.codigo === s.codigo); if (ya) f.sel = ya; else { f.sug.unshift(s); f.sel = s; } f.on = true; }
+      redraw(i);
+    });
+  };
   $$('input[name=mm]', o).forEach(r => r.onchange = () => { modoMargen = r.value; $('#pt', o).innerHTML = filas.map(filaHTML).join(''); });
   $('#pl', o).onchange = e => { listaPed = e.target.value; $('#pt', o).innerHTML = filas.map(filaHTML).join(''); cnt(); };
   $('#todos', o).onclick = () => { filas.forEach(f => f.on = true); $('#pt', o).innerHTML = filas.map(filaHTML).join(''); cnt(); };
@@ -946,8 +981,9 @@ async function importarPedido(file) {
       const ap = $('#pa', o).value.trim(), hoja = $('#ph', o).value.trim().toUpperCase() || hojaDeFecha(ped.fecha);
       let cot = S.cots.find(c => P.norm(c.proceso) === P.norm(proceso));
       const cab = { apertura: ap, fecha: P.fechaDe(ap) || ped.fecha, hoja, lista: listaPed, condicion: $('#pc', o).value.trim() || null, mant_oferta: $('#pm', o).value.trim() || null, obs: $('#po', o).value.trim() || null, cliente: 'ISSN', updated_by: who() };
+      // la cotización pudo haberse borrado (en otra pestaña o por otro usuario) después de abrir este pedido: si ya no existe, se crea de nuevo
+      if (cot) { const act = await db.upd('cc_cotizaciones', cot.id, { hoja, apertura: ap || cot.apertura, fecha: cab.fecha || cot.fecha }).catch(() => null); if (act) Object.assign(cot, act); else { S.cots = S.cots.filter(c => c !== cot); cot = null; } }
       if (!cot) [cot] = await db.ins('cc_cotizaciones', [{ proceso, estado: 'abierta', ...cab }]);
-      else Object.assign(cot, await db.upd('cc_cotizaciones', cot.id, { hoja, apertura: ap || cot.apertura, fecha: cab.fecha || cot.fecha }));
       if (!hojasGuardadas().includes(hoja)) await guardarHojas([...hojasGuardadas(), hoja]);
       const rows = sel.map(f => {
         const base = { cotizacion_id: cot.id, renglon: f.r.renglon, orden: f.r.renglon, cantidad: f.r.cantidad, cod_cliente: f.r.cod_cliente || null, desc_cliente: f.r.descripcion, obs: f.r.marcas && !/acepta alternativa/i.test(f.r.marcas) ? 'Marcas: ' + f.r.marcas : null };
