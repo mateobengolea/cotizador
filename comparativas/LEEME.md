@@ -59,6 +59,7 @@ En el repo `mateobengolea/cotizador` creá una carpeta `comparativas/` y subí t
 En **Planilla** o **Cotizaciones**, tocá **Importar PDF**. También podés arrastrar el PDF sobre la planilla.
 
 1. Se leen solos el expediente (por ejemplo, E247546 → EXPTE 247546), la apertura, la condición de pago, el mantenimiento de oferta y todos los renglones con código del cliente (MED…), cantidad, unidad y marcas.
+   Sirven los **dos formatos** de Bionexo: el pedido clásico a dos columnas ("Marcas preferidas") y el nuevo **"Reporte de cotización"** (Artículo / Marca Solicitada / Cant. solicitada / Embalaje). En el nuevo, la apertura es el *Vencimiento* y el expediente sale del título; no trae forma de pago, así que la Condición queda para completar.
 2. Para cada renglón la web propone el producto, en este orden:
    - **ya cotizado**: el mismo código MED o la misma descripción que ya cotizaste antes. Es la sugerencia más segura.
    - **historial**: un producto de la misma droga y concentración que ya cotizaste.

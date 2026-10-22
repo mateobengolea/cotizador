@@ -889,7 +889,7 @@ async function importarPedido(file) {
   const existe = S.cots.find(c => P.procesoKey(c.proceso) === P.procesoKey(ped.proceso) && ped.proceso);
   const yaRen = new Set(existe ? (I.itemsByCot.get(existe.id) || []).map(i => i.renglon) : []);
   if (existe) filas.forEach(f => { if (yaRen.has(f.r.renglon)) f.on = false; });
-  const mant = (ped.terminos.match(/MANTENIMIENTO DE OFERTA\s*([^-]*)/i) || [])[1] || '';
+  const mant = ((ped.terminos.match(/MANTENIMIENTO DE OFERTA\s*:?\s*(.*?)(?:\s+-|\s+PLAZO|$)/i) || [])[1] || '').trim();
   let modoMargen = 'ultimo';
   let listaPed = existe ? listaCot(existe) : LISTA_DEF;
   const precioFila = f => {
@@ -1000,12 +1000,14 @@ async function eliminarOC(o) {
   await db.del('cc_ocs', 'id', [o.id]);
   await loadAll(); location.hash = '#planilla'; toast(`OC ${o.numero} eliminada`);
 }
+// pedido de cotización: formato viejo (dos columnas, "Marcas preferidas") o nuevo ("Reporte de cotización")
+const esPedidoTxt = t => (/Pedido de Cotizaci/i.test(t) && /Marcas preferidas|Código:/i.test(t)) || (/Reporte de cotizaci/i.test(t) && /Cant\.? solicitada|Marca Solicitada/i.test(t));
 async function importarPDF(file) {
   let t = '';
   try { const pj = await pdfjsLib(); const d = await pj.getDocument({ data: new Uint8Array(await file.arrayBuffer()), verbosity: 0 }).promise; t = (await (await d.getPage(1)).getTextContent()).items.map(i => i.str).join(' '); }
   catch (e) { return toast('No pude leer el PDF: ' + e.message, 6000); }
   if (/Orden de (Provisi[oó]n|Compra)/i.test(t)) return importarOC(file);
-  if (/Pedido de Cotizaci/i.test(t) && /Marcas preferidas|Código:/i.test(t)) return importarPedido(file);
+  if (esPedidoTxt(t)) return importarPedido(file);
   return importarActa(file);
 }
 async function importarOC(file) {
@@ -1078,7 +1080,7 @@ async function importarActa(file, cotId) {
   try {
     acta = /\.pdf$/i.test(file.name) ? await P.parseActaPDF(await pdfjsLib(), new Uint8Array(await file.arrayBuffer())) : P.parseActa(XLSX, await readWb(file));
   } catch (e) {
-    if (/\.pdf$/i.test(file.name)) { try { const pj = await pdfjsLib(); const d = await pj.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise; const t = (await (await d.getPage(1)).getTextContent()).items.map(i => i.str).join(' '); if (/Pedido de Cotizaci/i.test(t) && /Marcas preferidas|Código:/i.test(t)) { toast('Esto es un pedido de cotización, no un acta: lo abro como pedido'); return importarPedido(file); } } catch { /* */ } }
+    if (/\.pdf$/i.test(file.name)) { try { const pj = await pdfjsLib(); const d = await pj.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise; const t = (await (await d.getPage(1)).getTextContent()).items.map(i => i.str).join(' '); if (esPedidoTxt(t)) { toast('Esto es un pedido de cotización, no un acta: lo abro como pedido'); return importarPedido(file); } } catch { /* */ } }
     return toast(e.message, 6000);
   }
   const key = P.procesoKey(acta.proceso);

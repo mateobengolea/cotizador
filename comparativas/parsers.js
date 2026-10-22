@@ -272,9 +272,80 @@
     return { titulo, proceso: m ? 'EXPTE ' + m[1] : '', renglones: [...ren.values()].sort((a, b) => a.renglon - b.renglon) };
   }
 
+  // ---------- Pedido de cotización, formato nuevo "Reporte de cotización" (Bionexo) ----------
+  async function parsePedidoReporte(pdfjs, doc) {
+    const rows = []; const cab = { titulo: '', vencimiento: '', terminos: '', pago: '', observaciones: '', contacto: '' };
+    let pend = null;   // renglón cuyo bloque quedó cortado al final de una página
+    for (let pn = 1; pn <= doc.numPages; pn++) {
+      const pg = await doc.getPage(pn);
+      const items = (await pg.getTextContent()).items.filter(i => i.str && i.str.trim()).map(i => ({ s: i.str.trim(), x: i.transform[4], y: i.transform[5], w: i.width, h: i.height || 9 }));
+      const H = (items.map(i => i.h).sort((a, b) => a - b)[Math.floor(items.length / 2)]) || 9;
+      const lab = re => items.find(i => re.test(i.s));
+      const valorDe = (re) => { const l = lab(re); if (!l) return ''; const dosp = items.find(i => i.s === ':' && Math.abs(i.y - l.y) < 1 && i.x > l.x && i.x < l.x + l.w + 8); const x0 = (dosp || l).x + (dosp || l).w; return items.filter(i => Math.abs(i.y - l.y) < 1 && i.x > x0 - 0.5 && i.x < x0 + 420 && i !== dosp).sort((a, b) => a.x - b.x).map(i => i.s).join(' ').split(/\s+\|\s+/)[0].trim(); };
+      const bloqueBajo = (re, x1) => { const l = lab(re); if (!l) return ''; return items.filter(i => i.y < l.y - 1 && i.y > l.y - 6 * H && i.x >= l.x && i.x < (x1 || l.x + 280)).sort((a, b) => b.y - a.y || a.x - b.x).map(i => i.s).join(' ').trim(); };
+      if (pn === 1) {
+        cab.titulo = valorDe(/^T[íi]tulo$/i);
+        cab.idPedido = valorDe(/^ID$/);
+        cab.contacto = valorDe(/^Contacto$/i).replace(/\s*\(\)\s*$/, '');
+        const v = lab(/^Vencimiento$/i); if (v) { const vv = items.find(i => i.y < v.y - 1 && i.y > v.y - 2.2 * H && Math.abs(i.x - v.x) < 3); cab.vencimiento = vv ? vv.s : ''; }
+        const tc = lab(/^T[ée]rminos y condiciones$/i), ob = lab(/^Observaciones$/i);
+        cab.terminos = tc ? bloqueBajo(/^T[ée]rminos y condiciones$/i, 600) : '';
+        cab.observaciones = ob ? bloqueBajo(/^Observaciones$/i, tc ? tc.x - 5 : ob.x + 290) : '';
+        const fp = lab(/^Formas? de pago$/i); if (fp) cab.pago = valorDe(/^Formas? de pago$/i);
+      }
+      const hdrArt = items.filter(i => /^Art[íi]culo$/i.test(i.s)).sort((a, b) => b.y - a.y);
+      const xM = (lab(/^Marca Solicitada$/i) || {}).x, xC = (lab(/^Cant\.? solicitada$/i) || {}).x, xE = (lab(/^Embalaje$/i) || {}).x;
+      // texto antes del primer "Artículo" de la página: continuación del renglón pendiente
+      if (pend && hdrArt.length >= 0) {
+        const tope = hdrArt.length ? hdrArt[0].y + 1.5 * H : -1e9;
+        const cont = items.filter(i => i.y > tope && i.y < 790 && i.x >= 35 && i.x < 560 && !/^\d{11}$/.test(i.s) && !/Reporte de cotizaci|Fecha del reporte|Drogueria Meta/i.test(i.s));
+        if (cont.length) { asignar(pend, cont); }
+        rows.push(fin(pend)); pend = null;
+      }
+      for (let k = 0; k < hdrArt.length; k++) {
+        const a = hdrArt[k];
+        const num = items.find(i => /^\d{1,4}$/.test(i.s) && Math.abs(i.y - a.y) < 1 && i.x < a.x);
+        const yBot = hdrArt[k + 1] ? hdrArt[k + 1].y + 1.5 * H : -1e9;
+        const vals = items.filter(i => i.y < a.y - 1 && i.y > yBot && i.x >= a.x - 2 && !(i === num));
+        const r = { n: num ? +num.s : null, desc: [], marca: [], cant: [], emb: [] };
+        const asignarLocal = list => asignar(r, list);
+        asignarLocal(vals);
+        if (!hdrArt[k + 1] && !vals.length) { pend = r; continue; }
+        if (!hdrArt[k + 1]) { pend = r; continue; }   // el último de la página puede seguir en la siguiente
+        rows.push(fin(r));
+      }
+      function asignar(r, list) {
+        for (const i of list) {
+          if (xE != null && i.x >= xE - 3) r.emb.push(i);
+          else if (xC != null && i.x >= xC - 3) r.cant.push(i);
+          else if (xM != null && i.x >= xM - 3) r.marca.push(i);
+          else r.desc.push(i);
+        }
+      }
+    }
+    if (pend) rows.push(fin(pend));
+    function fin(r) {
+      const j = a => a.sort((p, q) => q.y - p.y || p.x - q.x).map(i => i.s).join(' ').replace(/\s+/g, ' ').trim();
+      let d = j(r.desc); const m = d.match(/^([A-Z]{2,}\d{2,})\s*-\s*(.*)$/);
+      const marca = j(r.marca);
+      return { renglon: r.n, cod_cliente: m ? m[1] : '', descripcion: m ? m[2] : d, cantidad: num(j(r.cant)), unidad: j(r.emb), marcas: marca === '-' ? '' : marca.trim() };
+    }
+    const out = rows.filter(r => r.renglon != null && (r.descripcion || r.cod_cliente));
+    if (!out.length) throw new Error('No reconocí renglones en el reporte de cotización.');
+    out.sort((a, b) => a.renglon - b.renglon);
+    const mE = cab.titulo.match(/EXPTE\.?\s*(\d{5,7})/i) || cab.titulo.match(/\bE\s?(\d{6})\b/);
+    const mH = (cab.vencimiento || '').match(/(\d{1,2}\/\d{1,2}\/\d{2,4}).*?(\d{1,2}):(\d{2})/);
+    const plan = cab.titulo.replace(/^Pedido de cotizaci[oó]n\s*-?\s*/i, '').replace(/EXPTE\.?\s*\d{5,7}\s*/i, '').trim();
+    return { ...cab, titulo: 'ID: ' + (cab.idPedido || '') + ' - ' + cab.titulo, plan, proceso: mE ? 'EXPTE ' + mE[1] : '', apertura: mH ? `${mH[1]} - ${mH[2]}:${mH[3]}hs` : (cab.vencimiento || ''), fecha: fechaDe(cab.vencimiento), idPedido: cab.idPedido || '', renglones: out, formato: 'reporte' };
+  }
+
   // ---------- Pedido de cotización (Bionexo) desde PDF ----------
   async function parsePedidoPDF(pdfjs, data) {
     const doc = await pdfjs.getDocument({ data, isEvalSupported: false, disableFontFace: true, useSystemFonts: false, verbosity: 0 }).promise;
+    {   // ¿formato nuevo "Reporte de cotización"?
+      const t = (await (await doc.getPage(1)).getTextContent()).items.map(i => i.str).join(' ');
+      if (/Reporte de cotizaci/i.test(t) && /Cant\.? solicitada/i.test(t)) return parsePedidoReporte(pdfjs, doc);
+    }
     const rows = []; const cab = {}; const textoCab = [];
     for (let pn = 1; pn <= doc.numPages; pn++) {
       const pg = await doc.getPage(pn);
