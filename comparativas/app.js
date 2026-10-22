@@ -464,6 +464,7 @@ async function deshacer() {
 function menuFilas(rows, row) {
   const comps = (I.rensByItem.get(row.id) || []).map(r => r.comparativa_id);
   return [
+    { label: '🔍 Vincular producto del cotizador…   F3', run: () => vincularProducto(row) },
     { label: 'Ver historial y competencia', run: () => historial(row) },
     { label: `Abrir cotización ${(I.cot.get(row.cotizacion_id) || {}).proceso || ''}`, run: () => { location.hash = '#cot/' + row.cotizacion_id; } },
     ...(comps.length ? [{ label: 'Abrir acta comparativa', run: () => { location.hash = '#comp/' + comps[0]; } }] : []),
@@ -520,6 +521,7 @@ function montarGrilla(host, rowsFn, { id, sin = [], procDef, hoja, sinNuevas }) 
     onNewRow: sinNuevas ? undefined : async cells => { await nuevaFila(cells, procDef, hoja); grid.setRows(rowsFn()); fs = firsts(); },
     onDelete: async rows => { const ok = rows[0] && rows[0]._line ? await quitarDeOC(rows) : await borrarFilas(rows.map(r => r._base || r)); if (ok) grid.setRows(rowsFn()); return ok; },
     onUndo: async () => { await deshacer(); grid.setRows(rowsFn()); },
+    onBuscar: row => vincularProducto(row, () => { grid.setRows(rowsFn()); fs = firsts(); }),
     ghostText: c => c.key === 'proceso' ? (procDef() || '') : c.key === 'detalle' ? 'escribí acá para agregar…' : '',
     menu: (rows, row) => {
       const its = menuFilas(rows.map(r => r._base || r), row._base || row);
@@ -557,7 +559,7 @@ function exportGrilla(grid, nombre) {
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, nombre.slice(0, 30).replace(/[\\/?*[\]:]/g, ' '));
   XLSX.writeFile(wb, nombre.replace(/[^\w]+/g, '_') + '.xlsx');
 }
-const AYUDA = `<div class="xlhelp">Como en Excel: flechas para moverte · escribí para reemplazar · <kbd>F2</kbd> o doble click para editar · <kbd>Enter</kbd>/<kbd>Tab</kbd> confirman · <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd> copian y pegan con Excel · <kbd>Supr</kbd> borra · <kbd>Ctrl</kbd>+<kbd>Z</kbd> deshace · click derecho en una fila para más opciones · click en un título ordena · la fila de filtro acepta texto o &gt;n, &lt;n. Columnas celestes = calculadas, amarillas = en vivo (costos de hoy y competencia).</div>`;
+const AYUDA = `<div class="xlhelp">Como en Excel: flechas para moverte · escribí para reemplazar · <kbd>F2</kbd> o doble click para editar · <kbd>Enter</kbd>/<kbd>Tab</kbd> confirman · <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd> copian y pegan con Excel · <kbd>Supr</kbd> borra · <kbd>Ctrl</kbd>+<kbd>Z</kbd> deshace · <kbd>F3</kbd> o 🔍 vincula el renglón con un producto del cotizador · click derecho en una fila para más opciones · click en un título ordena · la fila de filtro acepta texto o &gt;n, &lt;n. Columnas celestes = calculadas, amarillas = en vivo (costos de hoy y competencia).</div>`;
 
 // ---------- Vista: Planilla con pestañas por mes ----------
 const ESPECIALES = t => t === 'TODAS' || t === 'ADJ' || /^OC /.test(t);
@@ -597,7 +599,7 @@ function vPlanilla(tab) {
   const t = (k, l, hoja) => `<a href="#planilla/${encodeURIComponent(k)}" class="${k === tab ? 'on' : ''}" ${hoja ? `data-hoja="${esc(k)}" title="Doble click para renombrar · click derecho para más opciones"` : ''}>${esc(l)}</a>`;
   const vacia = !ESPECIALES(tab) && !rowsFn().length;
   shell(`<div class="xltop"><span class="ttl">Planilla</span><span class="sub">Hoja <b>${esc(tab === 'ADJ' ? 'Adjudicados' : tab === 'TODAS' ? 'Todas' : tab)}</b></span><span class="spacer"></span>
-    <button class="btn pri" id="ped" title="Pedido de cotización, acta comparativa u orden de compra: se detecta solo">Importar PDF</button><button class="btn" id="nc">+ Nueva cotización</button><button class="btn" id="xls">Exportar hoja a Excel</button></div>
+    <button class="btn" id="vinc" title="Vincular el renglón seleccionado con un producto del cotizador (F3)">🔍 Vincular producto</button><button class="btn pri" id="ped" title="Pedido de cotización, acta comparativa u orden de compra: se detecta solo">Importar PDF</button><button class="btn" id="nc">+ Nueva cotización</button><button class="btn" id="xls">Exportar hoja a Excel</button></div>
     ${tab.startsWith('OC ') && I.oc.get(tab.slice(3)) ? (() => { const o = I.oc.get(tab.slice(3)); return `<div class="card" style="padding:8px 14px;margin-bottom:8px" class="small">Orden de provisión <b>${esc(o.serie ? o.serie + ' - ' : '')}${esc(o.numero)}</b> · ${fdate(o.fecha)} · ${esc(o.proceso || '')} ${esc(o.plan || '')} · Cond. ${esc(o.condicion || '—')} · vence ${fdate(o.vence)} · Total <b>${money(o.total)}</b> <button class="btn sm danger" id="delOC" style="margin-left:10px">Eliminar OC</button></div>`; })() : ''}
     ${vacia ? `<div class="card" style="padding:10px 14px;margin-bottom:8px">Hoja vacía. Escribí en la fila <b>＋</b> empezando por la columna <b>Proceso</b> (ej. EXPTE 252000): se crea la cotización en esta hoja y después cargás los renglones debajo.</div>` : ''}
     <div id="gh"></div>
@@ -606,6 +608,7 @@ function vPlanilla(tab) {
   const procDef = () => { const g = host._grid; const v = g ? g.view : []; const last = v[v.length - 1]; return last ? (I.cot.get(last.cotizacion_id) || {}).proceso : ''; };
   const g = montarGrilla(host, rowsFn, { id: 'plan', procDef, hoja: ESPECIALES(tab) ? null : tab, sinNuevas: tab.startsWith('OC ') || tab === 'ADJ' });
   $('#nc').onclick = nuevaCot;
+  $('#vinc').onclick = () => { const r = g.view[g.sel.r]; if (!r) return toast('Seleccioná un renglón'); vincularProducto(r, () => g.setRows(rowsFn())); };
   $('#ped').onclick = () => pickFile('.pdf', importarPDF);
   host.addEventListener('dragover', e => e.preventDefault());
   host.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f && /\.pdf$/i.test(f.name)) { e.preventDefault(); importarPDF(f); } });
@@ -904,6 +907,23 @@ function buscarProducto(base, lista, texto, cb) {
   $('#br', m).addEventListener('click', e => { const tr = e.target.closest('tr[data-k]'); if (tr) pick(res[+tr.dataset.k]); });
   new MutationObserver((_, ob) => { if (!m.isConnected) { ob.disconnect(); if (!elegido) cb(null); elegido = true; } }).observe(document.body, { childList: true });
   pinta(); setTimeout(() => $('#bq', m).focus(), 30);
+}
+// vincular un renglón de la planilla con un producto del cotizador (buscador)
+function vincularProducto(row, after) {
+  const it = row._base || row; if (!it || !it.id) return toast('Elegí un renglón de la planilla');
+  const lista = it.lista || listaCot(I.cot.get(it.cotizacion_id));
+  return new Promise(res => buscarProducto(candidatosPedido().base, lista, it.desc_cliente || it.detalle || '', async s => {
+    if (!s) return res();
+    const cod = String(s.codigo).trim(); const col = key => ({ key });
+    const ch = [];
+    if (!it.desc_cliente && it.detalle && !it.codigo) ch.push({ row: it, col: col('desc_cliente'), value: it.detalle });   // conserva el texto del pedido
+    ch.push({ row: it, col: col('codigo'), value: cod });
+    if (!I.costoCod.get(cod)) for (const k of ['detalle', 'monodroga', 'laboratorio']) if (s[k]) ch.push({ row: it, col: col(k), value: s[k] });
+    if (s.fuente === 'hist' && s.margen != null) ch.push({ row: it, col: col('margen'), value: String(s.margen * 100) });
+    await editarItems(ch); reindex();
+    toast(`R${it.renglon ?? ''} vinculado con ${s.detalle || cod}`);
+    if (after) after(); res();
+  }));
 }
 const hojaDeFecha = f => f ? MESES_N[+f.slice(5, 7) - 1] + ' ' + f.slice(0, 4) : hojaActual();
 async function importarPedido(file) {

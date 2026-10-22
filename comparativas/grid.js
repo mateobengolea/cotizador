@@ -241,6 +241,7 @@ function Grid(host, opt) {
     if (k === 'Tab') { e.preventDefault(); return setSel(s.r, s.c + (e.shiftKey ? -1 : 1)); }
     if (k === 'Enter') { e.preventDefault(); return setSel(s.r + (e.shiftKey ? -1 : 1), s.c); }
     if (k === 'F2') { e.preventDefault(); return startEdit(null); }
+    if (k === 'F3' && opt.onBuscar) { e.preventDefault(); const row = g.view[s.r]; if (row) Promise.resolve(opt.onBuscar(row)).then(() => g.refresh()); return; }
     if ((k === 'Delete' || k === 'Backspace') && !e.ctrlKey) {
       e.preventDefault(); const n = norm(); const ch = [];
       for (let r = n.r0; r <= n.r1 && r < g.view.length; r++) for (let c = n.c0; c <= n.c1; c++) if (cols[c].edit) ch.push({ r, c, value: '' });
